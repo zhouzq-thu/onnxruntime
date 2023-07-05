@@ -96,6 +96,10 @@ jobs:
       errorActionPreference: stop
     displayName: 'Pack NPM packages'
   - script: |
+     where windbgx
+    workingDirectory: '$(Build.SourcesDirectory)\js\web'
+    displayName: 'Run dxdiag'
+  - script: |
      dxdiag /t output2.txt
      timeout /t 30 /nobreak > nul
      type output2.txt

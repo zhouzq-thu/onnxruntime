@@ -95,10 +95,14 @@ jobs:
       workingDirectory: $(Build.BinariesDirectory)
       errorActionPreference: stop
     displayName: 'Pack NPM packages'
+  - powershell: |
+     Add-AppxPackage https://windbg.download.prss.microsoft.com/dbazure/prod/1-2306-12001-0/windbg.msixbundle
+    workingDirectory: '$(Build.SourcesDirectory)\js\web'
+    displayName: 'Install windbgx'
   - script: |
      where windbgx
     workingDirectory: '$(Build.SourcesDirectory)\js\web'
-    displayName: 'Run dxdiag'
+    displayName: 'validate windbgx installation'
   - script: |
      dxdiag /t output2.txt
      timeout /t 30 /nobreak > nul

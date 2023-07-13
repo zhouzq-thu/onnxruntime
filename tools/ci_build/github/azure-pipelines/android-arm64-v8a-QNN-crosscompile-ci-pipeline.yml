@@ -72,7 +72,7 @@ jobs:
       --start --emulator-extra-args="-partition-size 4096" \
       --emulator-pid-file $(Build.BinariesDirectory)/emulator.pid
     displayName: Start Android emulator
-    enabled: false
+    enabled: true
     continueOnError: true
 
   - script: |
@@ -98,5 +98,5 @@ jobs:
           --emulator-pid-file $(Build.BinariesDirectory)/emulator.pid
     displayName: Stop Android emulator
     condition: always()
-    enabled: false
+    enabled: true
     continueOnError: true

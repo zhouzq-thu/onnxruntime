@@ -45,4 +45,5 @@ struct OrtTensorRTProviderOptionsV2 {
   const char* trt_profile_max_shapes;           // Specify the range of the input shapes to build the engine with
   const char* trt_profile_opt_shapes;           // Specify the range of the input shapes to build the engine with
   int trt_cuda_graph_enable;                    // Enable CUDA graph in ORT TRT
+  const char* trt_engine_cache_prefix;          // specify engine cache prefix
 };

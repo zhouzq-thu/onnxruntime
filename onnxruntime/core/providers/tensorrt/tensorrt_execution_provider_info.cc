@@ -44,6 +44,7 @@ constexpr const char* kProfilesMinShapes = "trt_profile_min_shapes";
 constexpr const char* kProfilesMaxShapes = "trt_profile_max_shapes";
 constexpr const char* kProfilesOptShapes = "trt_profile_opt_shapes";
 constexpr const char* kCudaGraphEnable = "trt_cuda_graph_enable";
+constexpr const char* kCachePrefix = "trt_engine_cache_prefix";
 }  // namespace provider_option_names
 }  // namespace tensorrt
 
@@ -93,6 +94,7 @@ TensorrtExecutionProviderInfo TensorrtExecutionProviderInfo::FromProviderOptions
           .AddAssignmentToReference(tensorrt::provider_option_names::kProfilesMaxShapes, info.profile_max_shapes)
           .AddAssignmentToReference(tensorrt::provider_option_names::kProfilesOptShapes, info.profile_opt_shapes)
           .AddAssignmentToReference(tensorrt::provider_option_names::kCudaGraphEnable, info.cuda_graph_enable)
+          .AddAssignmentToReference(tensorrt::provider_option_names::kCachePrefix, info.engine_cache_prefix)
           .Parse(options));  // add new provider option here.
 
   return info;
@@ -132,6 +134,7 @@ ProviderOptions TensorrtExecutionProviderInfo::ToProviderOptions(const TensorrtE
       {tensorrt::provider_option_names::kProfilesMaxShapes, MakeStringWithClassicLocale(info.profile_max_shapes)},
       {tensorrt::provider_option_names::kProfilesOptShapes, MakeStringWithClassicLocale(info.profile_opt_shapes)},
       {tensorrt::provider_option_names::kCudaGraphEnable, MakeStringWithClassicLocale(info.cuda_graph_enable)},
+      {tensorrt::provider_option_names::kCachePrefix, MakeStringWithClassicLocale(info.engine_cache_prefix)},
   };
   return options;
 }
@@ -140,6 +143,7 @@ ProviderOptions TensorrtExecutionProviderInfo::ToProviderOptions(const OrtTensor
   auto empty_if_null = [](const char* s) { return s != nullptr ? std::string{s} : std::string{}; };
   const std::string kInt8CalibTable_ = empty_if_null(info.trt_int8_calibration_table_name);
   const std::string kCachePath_ = empty_if_null(info.trt_engine_cache_path);
+  const std::string kCachePrefix_ = empty_if_null(info.trt_engine_cache_prefix);
   const std::string kTacticSources_ = empty_if_null(info.trt_tactic_sources);
   const std::string kDecryptionLibPath_ = empty_if_null(info.trt_engine_decryption_lib_path);
   const std::string kExtraPluginLibPaths_ = empty_if_null(info.trt_extra_plugin_lib_paths);
@@ -179,6 +183,8 @@ ProviderOptions TensorrtExecutionProviderInfo::ToProviderOptions(const OrtTensor
       {tensorrt::provider_option_names::kProfilesMaxShapes, kProfilesMaxShapes_},
       {tensorrt::provider_option_names::kProfilesOptShapes, kProfilesOptShapes_},
       {tensorrt::provider_option_names::kCudaGraphEnable, MakeStringWithClassicLocale(info.trt_cuda_graph_enable)},
+      {tensorrt::provider_option_names::kCachePrefix, kCachePrefix_},
+
   };
   return options;
 }

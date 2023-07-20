@@ -22,9 +22,11 @@ def _make_efficient_attention_nodes(
     dk: str,
     dv: str,
     bias: str,
+    expand_bias: bool,
     scale: float,
     dropout_ratio: float,
 ):
+    nodes_to_add = []
     scale_node = make_constant_node("scale_" + str(idx), TensorProto.FLOAT, [], [scale])
     dropout_ratio_node = make_constant_node("dropout_ratio_" + str(idx), TensorProto.FLOAT, [], [dropout_ratio])
     int_zero_node = make_constant_node("int_zero_" + str(idx), TensorProto.INT64, [], [0])
@@ -33,6 +35,24 @@ def _make_efficient_attention_nodes(
     seed = helper.make_tensor_value_info("seed" + str(idx), TensorProto.INT64, [])
     offset = helper.make_tensor_value_info("offset" + str(idx), TensorProto.INT64, [])
     new_value_infos = [logsumexp, seed, offset]
+    if expand_bias:
+        shape_0 = helper.make_node("Shape", [q], ["shape_0_" + str(idx)])
+        shape_0.attribute.extend([helper.make_attribute("start", 0), helper.make_attribute("end", 1)])
+        shape_1 = helper.make_node("Shape", [q], ["shape_1_" + str(idx)])
+        shape_1.attribute.extend([helper.make_attribute("start", 2), helper.make_attribute("end", 3)])
+        shape_2 = helper.make_node("Shape", [q], ["shape_2_" + str(idx)])
+        shape_2.attribute.extend([helper.make_attribute("start", 1), helper.make_attribute("end", 2)])
+        shape_3 = helper.make_node("Shape", [k], ["shape_3_" + str(idx)])
+        shape_3.attribute.extend([helper.make_attribute("start", 1), helper.make_attribute("end", 2)])
+        concat = helper.make_node(
+            "Concat",
+            ["shape_0_" + str(idx), "shape_1_" + str(idx), "shape_2_" + str(idx), "shape_3_" + str(idx)],
+            ["concated_shape_" + str(idx)],
+        )
+        concat.attribute.extend([helper.make_attribute("axis", 0)])
+        expand = helper.make_node("Expand", [bias, "concated_shape_" + str(idx)], ["expanded_bias_" + str(idx)])
+        nodes_to_add.extend([shape_0, shape_1, shape_2, shape_3, concat, expand])
+        bias = "expanded_bias_" + str(idx)
     fwd_node = helper.make_node(
         "ATen",
         [
@@ -83,7 +103,7 @@ def _make_efficient_attention_nodes(
         "org.pytorch.aten",
     )
     bwd_node.attribute.extend([helper.make_attribute("operator", "_efficient_attention_backward")])
-    nodes_to_add = [scale_node, dropout_ratio_node, int_zero_node, true_node, fwd_node, bwd_node]
+    nodes_to_add.extend([scale_node, dropout_ratio_node, int_zero_node, true_node, fwd_node, bwd_node])
     return nodes_to_add, new_value_infos
 
 
@@ -146,7 +166,8 @@ def _apply_transform_for_pattern_0(matcher: GraphProto, idx: int, nodes: List[No
         nodes[21].input[0],
         nodes[22].input[0],
         "",
-        float(scale_value),
+        False,
+        float(scale_value[0] if isinstance(scale_value, list) else scale_value),
         0.0,
     )
     return nodes_to_remove, nodes_to_add, new_value_infos
@@ -217,7 +238,8 @@ def _apply_transform_for_pattern_1(matcher: GraphProto, idx: int, nodes: List[No
         nodes[23].input[0],
         nodes[24].input[0],
         "",
-        float(scale_value),
+        False,
+        float(scale_value[0] if isinstance(scale_value, list) else scale_value),
         0.0,
     )
     return nodes_to_remove, nodes_to_add, new_value_infos
@@ -254,19 +276,18 @@ def _apply_transform_for_pattern_2(matcher: GraphProto, idx: int, nodes: List[No
     # Check forward only as the backward is expected to be consistent if it's built correctly.
     scale_value = matcher.get_constant_value(nodes[3].input[1])
     ratio_value = matcher.get_constant_value(nodes[6].input[1])
-    add_input_shape_0 = matcher.get_shape(nodes[4].input[0])
-    add_input_shape_1 = matcher.get_shape(nodes[4].input[1])
     if not (
         check_attribute_value(nodes[1], "perm", [0, 2, 1, 3])
         and check_attribute_value(nodes[2], "perm", [0, 2, 3, 1])
         and scale_value is not None
-        and add_input_shape_0 == add_input_shape_1
         and ratio_value is not None
         and check_attribute_value(nodes[8], "perm", [0, 2, 1, 3])
         and check_attribute_value(nodes[9], "perm", [0, 2, 1, 3])
     ):
         return [], [], []
 
+    add_input_shape_0 = matcher.get_shape(nodes[4].input[0])
+    add_input_shape_1 = matcher.get_shape(nodes[4].input[1])
     nodes_to_add, new_value_infos = _make_efficient_attention_nodes(
         idx,
         nodes[1].input[0],
@@ -278,7 +299,8 @@ def _apply_transform_for_pattern_2(matcher: GraphProto, idx: int, nodes: List[No
         nodes[21].output[0],
         nodes[22].output[0],
         nodes[4].input[1],
-        1 / float(scale_value),
+        add_input_shape_0 != add_input_shape_1,
+        1 / float(scale_value[0] if isinstance(scale_value, list) else scale_value),
         ratio_value,
     )
     return nodes, nodes_to_add, new_value_infos
@@ -290,22 +312,26 @@ def transform_aten_efficient_attention(graph: GraphProto):
     nodes_to_add = []
     new_value_infos = []
     matcher = GraphMatcher(graph)
-    for idx, nodes in enumerate(matcher.match_pattern(PATTERN_0)):
+    idx = 0
+    for nodes in matcher.match_pattern(PATTERN_0):
         remove_nodes, add_nodes, add_value_infos = _apply_transform_for_pattern_0(matcher, idx, nodes)
         if len(add_nodes) > 0:
             nodes_to_remove.extend(remove_nodes)
             nodes_to_add.extend(add_nodes)
             new_value_infos.extend(add_value_infos)
-    for idx, nodes in enumerate(matcher.match_pattern(PATTERN_1)):
+            idx += 1
+    for nodes in matcher.match_pattern(PATTERN_1):
         remove_nodes, add_nodes, add_value_infos = _apply_transform_for_pattern_1(matcher, idx, nodes)
         if len(add_nodes) > 0:
             nodes_to_remove.extend(remove_nodes)
             nodes_to_add.extend(add_nodes)
             new_value_infos.extend(add_value_infos)
-    for idx, nodes in enumerate(matcher.match_pattern(PATTERN_2)):
+            idx += 1
+    for nodes in matcher.match_pattern(PATTERN_2):
         remove_nodes, add_nodes, add_value_infos = _apply_transform_for_pattern_2(matcher, idx, nodes)
         if len(add_nodes) > 0:
             nodes_to_remove.extend(remove_nodes)
             nodes_to_add.extend(add_nodes)
             new_value_infos.extend(add_value_infos)
+            idx += 1
     update_graph(graph, nodes_to_remove, nodes_to_add, new_value_infos)

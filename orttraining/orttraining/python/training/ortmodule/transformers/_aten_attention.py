@@ -36,20 +36,16 @@ def _make_efficient_attention_nodes(
     offset = helper.make_tensor_value_info("offset" + str(idx), TensorProto.INT64, [])
     new_value_infos = [logsumexp, seed, offset]
     if expand_bias:
-        shape_0 = helper.make_node("Shape", [q], ["shape_0_" + str(idx)])
-        shape_0.attribute.extend([helper.make_attribute("start", 0), helper.make_attribute("end", 1)])
-        shape_1 = helper.make_node("Shape", [q], ["shape_1_" + str(idx)])
-        shape_1.attribute.extend([helper.make_attribute("start", 2), helper.make_attribute("end", 3)])
-        shape_2 = helper.make_node("Shape", [q], ["shape_2_" + str(idx)])
-        shape_2.attribute.extend([helper.make_attribute("start", 1), helper.make_attribute("end", 2)])
-        shape_3 = helper.make_node("Shape", [k], ["shape_3_" + str(idx)])
-        shape_3.attribute.extend([helper.make_attribute("start", 1), helper.make_attribute("end", 2)])
+        shape_0 = helper.make_node("Shape", [q], ["shape_0_" + str(idx)], start=0, end=1)
+        shape_1 = helper.make_node("Shape", [q], ["shape_1_" + str(idx)], start=2, end=3)
+        shape_2 = helper.make_node("Shape", [q], ["shape_2_" + str(idx)], start=1, end=2)
+        shape_3 = helper.make_node("Shape", [k], ["shape_3_" + str(idx)], start=1, end=2)
         concat = helper.make_node(
             "Concat",
             ["shape_0_" + str(idx), "shape_1_" + str(idx), "shape_2_" + str(idx), "shape_3_" + str(idx)],
             ["concated_shape_" + str(idx)],
+            axis=0,
         )
-        concat.attribute.extend([helper.make_attribute("axis", 0)])
         expand = helper.make_node("Expand", [bias, "concated_shape_" + str(idx)], ["expanded_bias_" + str(idx)])
         nodes_to_add.extend([shape_0, shape_1, shape_2, shape_3, concat, expand])
         bias = "expanded_bias_" + str(idx)
@@ -74,8 +70,8 @@ def _make_efficient_attention_nodes(
         "efficient_attention_forward_" + str(idx),
         None,
         "org.pytorch.aten",
+        operator="_efficient_attention_forward",
     )
-    fwd_node.attribute.extend([helper.make_attribute("operator", "_efficient_attention_forward")])
     bwd_node = helper.make_node(
         "ATen",
         [
@@ -101,8 +97,8 @@ def _make_efficient_attention_nodes(
         "efficient_attention_backward_" + str(idx),
         None,
         "org.pytorch.aten",
+        operator="_efficient_attention_backward",
     )
-    bwd_node.attribute.extend([helper.make_attribute("operator", "_efficient_attention_backward")])
     nodes_to_add.extend([scale_node, dropout_ratio_node, int_zero_node, true_node, fwd_node, bwd_node])
     return nodes_to_add, new_value_infos
 

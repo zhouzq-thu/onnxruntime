@@ -19,6 +19,95 @@ parameters:
 stages:
 # Separate stage for building CPU vs NNAPI as we only want CodeQL to run on one of them so we don't get duplicate
 # issues for code that is built in both. We pick NNAPI as that includes the NNAPI EP code.
+- stage: BUILD_CPU_STAGE
+  variables:
+    Codeql.Enabled: false
+  jobs:
+  - job: Build_CPU_EP
+    pool: onnxruntime-Linux-CPU-For-Android-CI
+    workspace:
+      clean: all
+    timeoutInMinutes: 30
+    steps:
+    # Onnx has no 3.9 python package available yet, need to use python 3.8
+    # to avoid build onnx package
+    # pythonVersion can be updated in Azure pipeline settings
+    # https://dev.azure.com/onnxruntime/onnxruntime/_build?definitionId=53
+    - task: UsePythonVersion@0
+      displayName: Use Python $(pythonVersion)
+      inputs:
+        versionSpec: $(pythonVersion)
+
+    - task: JavaToolInstaller@0
+      displayName: Use jdk 11
+      inputs:
+        versionSpec: '11'
+        jdkArchitectureOption: 'x64'
+        jdkSourceOption: 'PreInstalled'
+
+    - script: sudo apt-get update -y && sudo apt-get install -y coreutils ninja-build
+      displayName: Install coreutils and ninja
+
+    - template: "templates/use-android-ndk.yml"
+
+    # We build the host protoc to <ORT_ROOT>/protobuf_install
+    - script: |
+        /bin/bash $(Build.SourcesDirectory)/tools/ci_build/github/apple/build_host_protoc.sh \
+          $(Build.SourcesDirectory) \
+          $(Build.BinariesDirectory)/protobuf \
+          $(Build.SourcesDirectory)/protobuf_install
+      displayName: Build Host Protoc
+
+    - script: |
+        env | grep ANDROID
+      displayName: View Android ENVs
+
+    - script: |
+        python3 tools/ci_build/build.py \
+          --android \
+          --build_dir build \
+          --android_sdk_path $ANDROID_HOME \
+          --android_ndk_path $ANDROID_NDK_HOME \
+          --android_abi=x86_64 \
+          --android_api=30 \
+          --skip_submodule_sync \
+          --parallel \
+          --cmake_generator=Ninja \
+          --path_to_protoc_exe $(Build.SourcesDirectory)/protobuf_install/bin/protoc \
+          --build_java \
+          --skip_tests
+      displayName: CPU EP, Build
+
+    - task: CopyFiles@2
+      displayName: Copy apks
+      inputs:
+        contents: 'build/**/*.apk'
+        targetFolder: $(Build.ArtifactStagingDirectory)
+        overWrite: true
+
+    - task: CopyFiles@2
+      displayName: Copy test data
+      inputs:
+        contents: 'build/**/testdata/**'
+        targetFolder: $(Build.ArtifactStagingDirectory)
+        overWrite: true
+
+    - task: CopyFiles@2
+      displayName: Copy test executables
+      inputs:
+        contents: |
+          build/Debug/*
+          build/Debug/java/androidtest/android/**
+        targetFolder: $(Build.ArtifactStagingDirectory)
+        overWrite: true
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: $(Build.ArtifactStagingDirectory)
+        artifactName: CPUBuildOutput
+
+    - template: templates/clean-agent-build-directory-step.yml
+
 - stage: BUILD_NNAPI_STAGE
   variables:
     Codeql.ProjectConfigPath: .github/workflows
@@ -116,95 +205,6 @@ stages:
       inputs:
         pathToPublish: $(Build.ArtifactStagingDirectory)
         artifactName: NNAPIBuildOutput
-
-    - template: templates/clean-agent-build-directory-step.yml
-
-- stage: BUILD_CPU_STAGE
-  variables:
-    Codeql.Enabled: false
-  jobs:
-  - job: Build_CPU_EP
-    pool: onnxruntime-Linux-CPU-For-Android-CI
-    workspace:
-      clean: all
-    timeoutInMinutes: 30
-    steps:
-    # Onnx has no 3.9 python package available yet, need to use python 3.8
-    # to avoid build onnx package
-    # pythonVersion can be updated in Azure pipeline settings
-    # https://dev.azure.com/onnxruntime/onnxruntime/_build?definitionId=53
-    - task: UsePythonVersion@0
-      displayName: Use Python $(pythonVersion)
-      inputs:
-        versionSpec: $(pythonVersion)
-
-    - task: JavaToolInstaller@0
-      displayName: Use jdk 11
-      inputs:
-        versionSpec: '11'
-        jdkArchitectureOption: 'x64'
-        jdkSourceOption: 'PreInstalled'
-
-    - script: sudo apt-get update -y && sudo apt-get install -y coreutils ninja-build
-      displayName: Install coreutils and ninja
-
-    - template: "templates/use-android-ndk.yml"
-
-    # We build the host protoc to <ORT_ROOT>/protobuf_install
-    - script: |
-        /bin/bash $(Build.SourcesDirectory)/tools/ci_build/github/apple/build_host_protoc.sh \
-          $(Build.SourcesDirectory) \
-          $(Build.BinariesDirectory)/protobuf \
-          $(Build.SourcesDirectory)/protobuf_install
-      displayName: Build Host Protoc
-
-    - script: |
-        env | grep ANDROID
-      displayName: View Android ENVs
-
-    - script: |
-        python3 tools/ci_build/build.py \
-          --android \
-          --build_dir build \
-          --android_sdk_path $ANDROID_HOME \
-          --android_ndk_path $ANDROID_NDK_HOME \
-          --android_abi=x86_64 \
-          --android_api=30 \
-          --skip_submodule_sync \
-          --parallel \
-          --cmake_generator=Ninja \
-          --path_to_protoc_exe $(Build.SourcesDirectory)/protobuf_install/bin/protoc \
-          --build_java \
-          --skip_tests
-      displayName: CPU EP, Build
-
-    - task: CopyFiles@2
-      displayName: Copy apks
-      inputs:
-        contents: 'build/**/*.apk'
-        targetFolder: $(Build.ArtifactStagingDirectory)
-        overWrite: true
-
-    - task: CopyFiles@2
-      displayName: Copy test data
-      inputs:
-        contents: 'build/**/testdata/**'
-        targetFolder: $(Build.ArtifactStagingDirectory)
-        overWrite: true
-
-    - task: CopyFiles@2
-      displayName: Copy test executables
-      inputs:
-        contents: |
-          build/Debug/*
-          build/Debug/java/androidtest/android/**
-        targetFolder: $(Build.ArtifactStagingDirectory)
-        overWrite: true
-
-    - task: PublishBuildArtifacts@1
-      inputs:
-        pathToPublish: $(Build.ArtifactStagingDirectory)
-        artifactName: CPUBuildOutput
 
     - template: templates/clean-agent-build-directory-step.yml
 

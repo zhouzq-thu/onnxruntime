@@ -17,9 +17,11 @@ parameters:
   default: 0
 
 stages:
-- stage: BUILD_STAGE
+# Separate stage for building CPU vs NNAPI as we only want CodeQL to run on one of them so we don't get duplicate
+# issues for code that is built in both. We pick NNAPI as that includes the NNAPI EP code.
+- stage: BUILD_CPU_STAGE
   variables:
-    Codeql.Enabled: true
+    Codeql.Enabled: false
   jobs:
   - job: Build_CPU_EP
     pool: onnxruntime-Linux-CPU-For-Android-CI
@@ -60,9 +62,6 @@ stages:
         env | grep ANDROID
       displayName: View Android ENVs
 
-    # - task: CodeQL3000Init@0
-    #   displayName: "Init CodeQL"
-
     - script: |
         python3 tools/ci_build/build.py \
           --android \
@@ -78,9 +77,6 @@ stages:
           --build_java \
           --skip_tests
       displayName: CPU EP, Build
-
-    # - task: CodeQL3000Finalize@0
-    #   displayName: "Finalize CodeQL"
 
     - task: CopyFiles@2
       displayName: Copy apks
@@ -112,9 +108,20 @@ stages:
 
     - template: templates/clean-agent-build-directory-step.yml
 
+- stage: BUILD_NNAPI_STAGE
+  variables:
+    Codeql.ProjectConfigPath: .github/workflows/codeql.yml
+    Codeql.Enabled: true
+    Codeql.Language: cpp
+    ${{ if variables['Codeql.Enabled'] }}:
+      JobsTimeout: 120
+    ${{ else }}:
+      JobsTimeout: 60
+
+  jobs:
   - job: Build_NNAPI_EP
     pool: onnxruntime-Linux-CPU-For-Android-CI
-    timeoutInMinutes: 60
+    timeoutInMinutes: ${{ variables.JobsTimeout }}
     workspace:
       clean: all
     condition: notIn(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
@@ -202,7 +209,7 @@ stages:
     - template: templates/clean-agent-build-directory-step.yml
 
 - stage: TEST_STAGE
-  dependsOn: BUILD_STAGE
+  dependsOn: [BUILD_CPU_STAGE, BUILD_NNAPI_STAGE]
   jobs:
   - job: Test_CPU_EP
     pool:

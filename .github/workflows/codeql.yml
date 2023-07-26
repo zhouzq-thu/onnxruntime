@@ -8,10 +8,10 @@ name: "CodeQL"
 
 on:
   push:
-    branches: [ "main", nuget_pkg, rel-*, skottmckay* ]
+    branches: [ "main", nuget_pkg, rel-* ]
   pull_request:
     # The branches below must be a subset of the branches above
-    branches: [ "main", skottmckay* ]
+    branches: [ "main" ]
   schedule:
     - cron: '41 13 * * 0'
 

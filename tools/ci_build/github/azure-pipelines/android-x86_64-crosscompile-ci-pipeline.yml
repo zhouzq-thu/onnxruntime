@@ -21,7 +21,7 @@ stages:
 # issues for code that is built in both. We pick NNAPI as that includes the NNAPI EP code.
 - stage: BUILD_NNAPI_STAGE
   variables:
-    Codeql.ProjectConfigPath: .github/workflows/codeql.yml
+    Codeql.ProjectConfigPath: .github/workflows
     Codeql.Enabled: true
     Codeql.Language: cpp
     ${{ if variables['Codeql.Enabled'] }}:

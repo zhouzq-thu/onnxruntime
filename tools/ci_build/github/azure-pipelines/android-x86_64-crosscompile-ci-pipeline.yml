@@ -155,8 +155,9 @@ stages:
         env | grep ANDROID
       displayName: View Android ENVs
 
-    - task: CodeQL3000Init@0
-      displayName: "Init CodeQL"
+    # CodeQL3000Init and CodeQL3000Finalize are only required if manually running CodeQL on a branch.
+    # - task: CodeQL3000Init@0
+    #   displayName: "Init CodeQL"
 
     - script: |
         python3 tools/ci_build/build.py \
@@ -175,8 +176,8 @@ stages:
           --skip_tests
       displayName: NNAPI EP, Build
 
-    - task: CodeQL3000Finalize@0
-      displayName: "Finalize CodeQL"
+    # - task: CodeQL3000Finalize@0
+    #   displayName: "Finalize CodeQL"
 
     - task: CopyFiles@2
       displayName: Copy apks

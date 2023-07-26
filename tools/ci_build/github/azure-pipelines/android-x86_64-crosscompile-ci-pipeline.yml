@@ -16,11 +16,11 @@ parameters:
   type: number
   default: 0
 
+variables:
+  Codeql.Enabled: true
+
 stages:
 - stage: BUILD_STAGE
-  variables:
-    Codeql.Enabled: true
-
   jobs:
   - job: Build_CPU_EP
     pool: onnxruntime-Linux-CPU-For-Android-CI

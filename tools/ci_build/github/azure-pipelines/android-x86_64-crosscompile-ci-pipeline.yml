@@ -16,11 +16,10 @@ parameters:
   type: number
   default: 0
 
-variables:
-  Codeql.Enabled: true
-
 stages:
 - stage: BUILD_STAGE
+  variables:
+    Codeql.Enabled: true
   jobs:
   - job: Build_CPU_EP
     pool: onnxruntime-Linux-CPU-For-Android-CI
@@ -61,6 +60,9 @@ stages:
         env | grep ANDROID
       displayName: View Android ENVs
 
+    # - task: CodeQL3000Init@0
+    #   displayName: "Init CodeQL"
+
     - script: |
         python3 tools/ci_build/build.py \
           --android \
@@ -76,6 +78,9 @@ stages:
           --build_java \
           --skip_tests
       displayName: CPU EP, Build
+
+    # - task: CodeQL3000Finalize@0
+    #   displayName: "Finalize CodeQL"
 
     - task: CopyFiles@2
       displayName: Copy apks
@@ -143,6 +148,9 @@ stages:
         env | grep ANDROID
       displayName: View Android ENVs
 
+    - task: CodeQL3000Init@0
+      displayName: "Init CodeQL"
+
     - script: |
         python3 tools/ci_build/build.py \
           --android \
@@ -159,6 +167,9 @@ stages:
           --build_java \
           --skip_tests
       displayName: NNAPI EP, Build
+
+    - task: CodeQL3000Finalize@0
+      displayName: "Finalize CodeQL"
 
     - task: CopyFiles@2
       displayName: Copy apks

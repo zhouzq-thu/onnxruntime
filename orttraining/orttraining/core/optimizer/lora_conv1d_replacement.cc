@@ -5,8 +5,6 @@
 #include "orttraining/core/optimizer/lora_conv1d_replacement.h"
 #include "core/graph/graph_utils.h"
 
-using namespace ONNX_NAMESPACE;
-using namespace ::onnxruntime::common;
 /*
   in LoRA code, it will use conv1d to do projection for qkv,
   while the conv1d calculation is mathematically equivalent to matmul, and matmul is much faster than conv1d.
@@ -16,7 +14,7 @@ namespace onnxruntime {
 bool NodeCanBeReplacedByMatmul(const Node& node) {
   // if node type is Conv, and attr "dilations" is 1, "kernel_shape" is 1, "stride" is 1, then it can be replaced by matmul
   // kernel_shape is 1 means it is conv1d
-  if (node.OpType() != "Conv") {
+  if (!graph_utils::IsSupportedOptypeVersionAndDomain(node, "Conv", {1, 11})) {
     return false;
   }
   const auto* dilations = graph_utils::GetNodeAttribute(node, "dilations");
@@ -34,10 +32,9 @@ bool NodeCanBeReplacedByMatmul(const Node& node) {
 
 void Conv1dToMatmul(Graph& graph, Node& conv) {
   // shape of conv1d input: [batch_size, in_channels, in_length]
-  // shape conv1d weight:[output_channels, input_channels/group, kernel_shape], kernel_shape is 1
+  // shape of conv1d weight:[output_channels, input_channels/group, kernel_shape], kernel_shape is 1
   // we need to split the input into "group", and squeeze&split the weight, and then do matmul
-  using namespace std::literals;
-  auto node_description = "LoRAConv1dReplacement"s;
+  auto node_description = std::string("LoRAConv1dReplacement");
   auto execution_provider_type = conv.GetExecutionProviderType();
   // 1. split conv input
   auto group_attr = graph_utils::GetNodeAttribute(conv, "group");
@@ -70,7 +67,7 @@ void Conv1dToMatmul(Graph& graph, Node& conv) {
     InlinedVector<int64_t> initializer_proto_value{2};
     initializer_proto.set_raw_data(initializer_proto_value.data(), initializer_proto_value.size() * sizeof(int64_t));
     auto& axes_input = graph_utils::AddInitializer(graph, initializer_proto);
-    // squezz node doesn's have opschema here, so we need to set input args count manually
+    // squeze node doesn't have opschema here, so we need to set input args count manually
     weight_squeeze.MutableInputArgsCount().resize(2);
     graph_utils::AddNodeInput(weight_squeeze, 1, axes_input);
   } else {

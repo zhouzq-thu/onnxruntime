@@ -8,7 +8,27 @@
 /*
   in LoRA code, it will use conv1d to do projection for qkv,
   while the conv1d calculation is mathematically equivalent to matmul, and matmul is much faster than conv1d.
-  the subsitution of the graph optimizer is: 1 conv1d >> 2 split + 1 squeeze + group_num matmul + 1 concat
+  the graph transformation is doing the following graph substitution:
+  1. the input graph is:
+  conv_input  conv_weight
+        \       /
+         \     /
+          conv1d
+
+  2. the output graph is as follows,
+     the number of matmul is equal to attribute "group" of conv1d
+    conv_input   conv1d.group    conv_weight  conv1d.group
+      \          /                   \         /
+       \        /                   Squeeze   /
+        \      /                       \     /
+          Split                        Split
+          /...\                        /...\
+          ||   |_____________Matmul___||___|
+          ||                   /      ||
+          ||_________Matmul___/_______||
+                       /     /
+                      /...../
+                      Concat
 */
 namespace onnxruntime {
 bool NodeCanBeReplacedByMatmul(const Node& node) {

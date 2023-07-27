@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 #include "core/optimizer/initializer.h"
-#include "core/optimizer/lora_conv1d_replacement.h"
+#include "orttraining/core/optimizer/lora_conv1d_replacement.h"
 #include "core/graph/graph_utils.h"
 
 using namespace ONNX_NAMESPACE;

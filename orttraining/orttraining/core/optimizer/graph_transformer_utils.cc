@@ -66,7 +66,7 @@
 #include "core/optimizer/compute_optimizer/upstream_reshape.h"
 #include "orttraining/core/optimizer/compute_optimizer/padding_elimination.h"
 #include "orttraining/core/optimizer/compute_optimizer/sceloss_compute_optimization.h"
-#include "core/optimizer/lora_conv1d_replacement.h"
+#include "orttraining/core/optimizer/lora_conv1d_replacement.h"
 
 namespace onnxruntime {
 namespace training {

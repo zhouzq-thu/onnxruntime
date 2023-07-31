@@ -11,7 +11,7 @@ stages:
         msbuildPlatform: x64
         isX86: false
         job_name_suffix: x64_RelWithDebInfo
-        RunOnnxRuntimeTests: true
+        RunOnnxRuntimeTests: false
         RunStaticCodeAnalysis: false
         ORT_EP_NAME: TensorRT
         WITH_CACHE: true

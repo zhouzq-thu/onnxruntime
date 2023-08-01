@@ -100,7 +100,7 @@ export class WebGpuBackend {
       throw new Error('WebGpuBackend: WebGPU is not available.');
     }
 
-    const adapter = await navigator.gpu.requestAdapter();
+    const adapter = await navigator.gpu.requestAdapter({powerPreference: "high-performance"});
     if (!adapter) {
       throw new Error('WebGpuBackend: Failed to get GPU adapter.');
     }

@@ -17,6 +17,10 @@ parameters:
 - name: msbuildPlatform
   type: string
 
+- name: msbuildArgs
+  type: string
+  default: '-maxcpucount'
+
 - name: isX86
   type: boolean
   default: false
@@ -58,7 +62,7 @@ parameters:
 - name: OnnxruntimeTestGpuDeviceId
   type: number
   default: 0
-  
+
 
 jobs:
 - job: build_${{ parameters.job_name_suffix }}
@@ -223,7 +227,7 @@ jobs:
       solution: '$(Build.BinariesDirectory)\${{ parameters.BuildConfig }}\onnxruntime.sln'
       platform: ${{ parameters.msbuildPlatform }}
       configuration: ${{ parameters.BuildConfig }}
-      msbuildArgs: '-maxcpucount ${{ variables.MSBUILD_CACHE_ARG }}'
+      msbuildArgs: '${{ parameters.msbuildArgs}} ${{ variables.MSBUILD_CACHE_ARG }}'
       msbuildArchitecture: ${{ parameters.buildArch }}
       maximumCpuCount: true
       logProjectEvents: false

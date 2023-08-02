@@ -9,7 +9,7 @@ stages:
         buildArch: x64
         additionalBuildFlags: --build_wheel --use_cuda --cuda_home="$(Agent.TempDirectory)\v11.8" --use_tensorrt --tensorrt_home="C:\local\TensorRT-8.6.1.6.Windows10.x86_64.cuda-11.8" --cuda_version=11.8 --cuda_home="$(Agent.TempDirectory)\v11.8" --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES=75
         msbuildPlatform: x64
-        msbuidArgs: '-detailedsummary -maxcpucount -consoleloggerparameters:PerformanceSummary'
+        msbuildArgs: '-detailedsummary -maxcpucount -consoleloggerparameters:PerformanceSummary'
         isX86: false
         job_name_suffix: x64_RelWithDebInfo
         RunOnnxRuntimeTests: false

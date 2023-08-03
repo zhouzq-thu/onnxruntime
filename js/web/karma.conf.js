@@ -103,7 +103,7 @@ module.exports = function (config) {
       EdgeTest: {
         base: 'Edge',
         edgeDataDir: dir,
-        flags: ['--enable-logging', '--log-level=0']
+        flags: ['--enable-logging', '--log-level=0', '--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--gpu-vendor-id=0x10de']
       },
       ChromeTest: {
         base: 'Chrome',

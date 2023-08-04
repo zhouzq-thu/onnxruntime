@@ -1374,6 +1374,7 @@ OrtTensorRTProviderOptionsV2 OrtTensorRTProviderOptionsToOrtTensorRTProviderOpti
   trt_options_converted.trt_profile_max_shapes = "";
   trt_options_converted.trt_profile_opt_shapes = "";
   trt_options_converted.trt_cuda_graph_enable = 0;
+  trt_options_converted.trt_engine_cache_prefix = "";
 
   return trt_options_converted;
 }
@@ -1745,6 +1746,7 @@ ORT_API_STATUS_IMPL(OrtApis::CreateTensorRTProviderOptions, _Outptr_ OrtTensorRT
   options->trt_profile_max_shapes = nullptr;
   options->trt_profile_opt_shapes = nullptr;
   options->trt_cuda_graph_enable = false;
+  options->trt_engine_cache_prefix = nullptr;
   *out = options.release();
   return nullptr;
 #else

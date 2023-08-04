@@ -969,7 +969,6 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(const TensorrtExecutionProv
                         << ", trt_dump_subgraphs: " << dump_subgraphs_
                         << ", trt_engine_cache_enable: " << engine_cache_enable_
                         << ", trt_cache_path: " << cache_path_
-                        << ", trt_cache_prefix: " << cache_prefix_
                         << ", trt_engine_decryption_enable: " << engine_decryption_enable_
                         << ", trt_engine_decryption_lib_path: " << engine_decryption_lib_path_
                         << ", trt_force_sequential_engine_build: " << force_sequential_engine_build_
@@ -983,7 +982,8 @@ TensorrtExecutionProvider::TensorrtExecutionProvider(const TensorrtExecutionProv
                         << ", trt_profile_min_shapes: " << profile_min_shapes
                         << ", trt_profile_max_shapes: " << profile_max_shapes
                         << ", trt_profile_opt_shapes: " << profile_opt_shapes
-                        << ", trt_cuda_graph_enable: " << cuda_graph_enable_;
+                        << ", trt_cuda_graph_enable: " << cuda_graph_enable_
+                        << ", trt_cache_prefix: " << cache_prefix_;
 }
 
 TensorrtExecutionProvider::~TensorrtExecutionProvider() {
@@ -1288,7 +1288,7 @@ SubGraphCollection_t TensorrtExecutionProvider::GetSupportedList(SubGraphCollect
         auto& graph_build = model_build->MainGraph();
 
         // Add node and node args
-        // If node output is also parent graph output, the  output will be added to the
+        // If node output is also parent graph output, the output will be added to the
         // subgraph's output list
         std::vector<std::string> subgraph_output_names;
         for (const auto& index : group.first) {

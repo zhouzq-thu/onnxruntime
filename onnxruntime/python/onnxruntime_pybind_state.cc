@@ -385,7 +385,9 @@ std::unique_ptr<IExecutionProvider> CreateExecutionProviderInstance(
             nullptr,
             nullptr,
             nullptr,
-            0};
+            0,
+            nullptr
+        };
         for (auto option : it->second) {
           if (option.first == "device_id") {
             if (!option.second.empty()) {
@@ -613,6 +615,13 @@ std::unique_ptr<IExecutionProvider> CreateExecutionProviderInstance(
             }
           } else {
             ORT_THROW("Invalid TensorRT EP option: ", option.first);
+          } else if (option.first == "trt_engine_cache_prefix") {
+            if (!option.second.empty()) {
+              cache_prefix = option.second;
+              params.trt_engine_cache_prefix = cache_prefix.c_str();
+            } else {
+              ORT_THROW("[ERROR] [TensorRT] The value for the key 'trt_engine_cache_prefix' should be a string.\n");
+            }
           }
         }
         if (std::shared_ptr<IExecutionProviderFactory> tensorrt_provider_factory = onnxruntime::TensorrtProviderFactoryCreator::Create(&params)) {

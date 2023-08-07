@@ -52,6 +52,7 @@ def _export_pt_1_10(g, n, *args, **kwargs):
                 "wrap exportable sub-nn.Module's as ORTModule."
             )
         inplace = kwargs["inplace"]
+
         # TODO move to public API once exporter team exposes that
         training_mode = None
         if get_runtime_pytorch_version() >= version.parse("1.12"):
@@ -75,11 +76,18 @@ def _export_pt_1_10(g, n, *args, **kwargs):
         input_tensor_types = []
         input_tensor_ranks = []
 
+        input_bool_scalars = []
+        input_bool_scalar_positions = []
+
         input_int_scalars = []
         input_int_scalar_positions = []
 
         input_float_scalars = []
         input_float_scalar_positions = []
+
+        input_bool_tuples = []
+        input_bool_tuple_positions = []
+        input_bool_tuple_begins = []
 
         input_int_tuples = []
         input_int_tuple_positions = []
@@ -109,19 +117,32 @@ def _export_pt_1_10(g, n, *args, **kwargs):
                     # A float.
                     input_float_scalar_positions.append(i)
                     input_float_scalars.append(arg)
+                # bool check MUST be before int check since bool is a subclass of int
+                elif isinstance(arg, bool):
+                    # A bool.
+                    input_bool_scalar_positions.append(i)
+                    input_bool_scalars.append(int(arg))
                 elif isinstance(arg, int):
                     # A int.
                     input_int_scalar_positions.append(i)
                     input_int_scalars.append(arg)
                 else:
+                    is_bool_tuple = False
                     is_int_tuple = False
                     is_float_tuple = False
                     if isinstance(arg, tuple) and len(arg) > 0:
-                        is_int_tuple = all(isinstance(ele, int) for ele in arg)
+                        # bool check MUST be before int check since bool is a subclass of int.
+                        is_bool_tuple = all(isinstance(ele, bool) for ele in arg)
+                        is_int_tuple = not is_bool_tuple and all(isinstance(ele, int) for ele in arg)
                         is_float_tuple = not is_int_tuple and all(isinstance(ele, float) for ele in arg)
 
-                    # Only support tuple of int or float, for other types, handle it as a pointer.
-                    if is_int_tuple:
+                    # Only support tuple of bool, int or float, for other types, handle it as a pointer.
+                    if is_bool_tuple:
+                        # A tuple of bool.
+                        input_bool_tuple_positions.append(i)
+                        input_bool_tuple_begins.append(len(input_bool_tuples))
+                        input_bool_tuples.extend([int(ele) for ele in arg])
+                    elif is_int_tuple:
                         # A tuple of ints.
                         input_int_tuple_positions.append(i)
                         input_int_tuple_begins.append(len(input_int_tuples))
@@ -172,12 +193,19 @@ def _export_pt_1_10(g, n, *args, **kwargs):
             "comment_s": debug_comment,
         }
 
+        if len(input_bool_scalars) > 0:
+            attrs["input_bool_scalars_i"] = input_bool_scalars
+            attrs["input_bool_scalar_positions_i"] = input_bool_scalar_positions
         if len(input_int_scalars) > 0:
             attrs["input_int_scalars_i"] = input_int_scalars
             attrs["input_int_scalar_positions_i"] = input_int_scalar_positions
         if len(input_float_scalars) > 0:
             attrs["input_float_scalars_f"] = input_float_scalars
             attrs["input_float_scalar_positions_i"] = input_float_scalar_positions
+        if len(input_bool_tuples) > 0:
+            attrs["input_bool_tuples_i"] = input_bool_tuples
+            attrs["input_bool_tuple_positions_i"] = input_bool_tuple_positions
+            attrs["input_bool_tuple_begins_i"] = input_bool_tuple_begins
         if len(input_int_tuples) > 0:
             attrs["input_int_tuples_i"] = input_int_tuples
             attrs["input_int_tuple_positions_i"] = input_int_tuple_positions

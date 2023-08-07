@@ -118,10 +118,24 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
         """
         args_tensors = tensor_list[:args_tensor_count]
         kwargs_tensors = tensor_list[args_tensor_count : args_tensor_count + kwargs_tensor_count]
-        partitioned_params = tensor_list[args_tensor_count + kwargs_tensor_count :]
 
         args = unflatten_data_using_schema(args_tensors, args_schema)
         kwargs = unflatten_data_using_schema(kwargs_tensors, kwargs_schema)
+
+        # We will re-retrieve the partitioned parameter tensors other than use the one passed in input (of size 0).
+        # This is required for ORT run because in ORT graph, the tensor of size 0 will always be size 0
+        # (this step is not necessary for PyTorch run, because PyTorch will re-use the same tensor
+        # while .data got updated to full-sized data after pre_forward_with_kwargs_function is called).
+        from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
+        from deepspeed.runtime.zero.partitioned_param_coordinator import iter_params
+
+        # Retrieve the parameters that are not available for this module.
+        params_to_fetch = frozenset(iter_params(module))
+        partitioned_params = []
+        for param in params_to_fetch:
+            if param.ds_status == ZeroParamStatus.NOT_AVAILABLE:
+                partitioned_params.append(param)
+
         f_ret = pre_forward_with_kwargs_function(module, args, kwargs)
 
         if f_ret is None:
@@ -137,6 +151,7 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
         updated_kwargs_tensors, _ = extract_data_and_schema(updated_kwargs)
 
         rets = tuple(updated_args_tensors + updated_kwargs_tensors)
+
         rets += tuple([p.detach().requires_grad_(p.requires_grad) for p in partitioned_params])
 
         # PyTorch exporter does not support an empty list of tensors, so we have this check.
@@ -245,7 +260,7 @@ class ZeROOffloadSubscriber(SubscriberBase):
         from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
         from deepspeed.runtime.zero.partitioned_param_coordinator import iter_params
 
-        # Retrive the parameters that are not available for this module.
+        # Retrieve the parameters that are not available for this module.
         params_to_fetch = frozenset(iter_params(module))
         partitioned_params = []
         for param in params_to_fetch:

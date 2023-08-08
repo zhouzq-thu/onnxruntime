@@ -79,6 +79,25 @@ do
   fi
 done < "valgrind.log"
 
+# Parse memleak log blocks which show 'definitely lost'
+if [ "$is_mem_leaked" = "true" ]; then
+    awk '
+    # substitute "==xxxxx==" with ""
+    {sub(/==[0-9]+== /, "")}
+
+    # found=1 when keyword is found
+    /blocks are definitely lost in loss/ {found = 1}
+
+    # export this line when found and line!=""
+    found && $0 != "" {print}
+
+    # stop exporting when found and line=""
+    found && $0 == "" {found = 0; print ""}
+    ' valgrind.log > definitely_lost_memleak_detail.log
+    echo $(date +"%Y-%m-%d %H:%M:%S") '[valgrind] Detailed memleak log saved in artifact memleak_detail.log'
+    mv definitely_lost_memleak_detail.log result
+fi
+
 # Export ORT-TRT memleak detail log if available
 if [ "$is_mem_leaked" = "true" ]; then
     awk '

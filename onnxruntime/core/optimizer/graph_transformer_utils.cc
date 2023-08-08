@@ -53,6 +53,7 @@
 #include "core/optimizer/nchwc_transformer.h"
 #include "core/optimizer/noop_elimination.h"
 #include "core/optimizer/not_where_fusion.h"
+#include "core/optimizer/pre_inliner.h"
 #include "core/optimizer/pre_shape_node_elimination.h"
 #ifdef MLAS_TARGET_AMD64_IX86
 #include "core/optimizer/qdq_transformer/avx2_weight_s8_to_u8.h"
@@ -191,6 +192,9 @@ InlinedVector<std::unique_ptr<GraphTransformer>> GenerateTransformers(
   const InlinedHashSet<std::string_view> dml_ep = {onnxruntime::kDmlExecutionProvider};
   switch (level) {
     case TransformerLevel::Level1: {
+      // Inline nodes such as within non-ONNX domains. THis is mainly for pre-process some graphs exported from PyTorch.
+      transformers.emplace_back(std::make_unique<PreInliner>());
+
       // RewriteRule optimizations are the simplest (they generally remove unnecessary nodes and are cheap to run)
       // so run them first so there is potentially less for the more intensive optimizations like ConstantFolding,
       // CommonSubexpressionElimination and TransposeOptimizer to do.

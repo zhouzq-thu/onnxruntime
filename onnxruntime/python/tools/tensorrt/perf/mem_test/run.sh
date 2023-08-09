@@ -61,7 +61,7 @@ rm ${ONNX_MODEL_2}.tar.gz
 
 # Run valgrind
 echo $(date +"%Y-%m-%d %H:%M:%S") '[valgrind] Starting memcheck with' ${ONNX_MODEL_2}
-valgrind --leak-check=full --show-leak-kinds=all --num-callers=30 --keep-debuginfo=yes --log-file=valgrind.log ${ORT_SOURCE}/build/Linux/Release/onnxruntime_perf_test -e tensorrt -r 1 ${ONNX_MODEL_2}/{ONNX_MODEL_2}.onnx
+valgrind --leak-check=full --show-leak-kinds=all --num-callers=30 --keep-debuginfo=yes --log-file=valgrind.log ${ORT_SOURCE}/build/Linux/Release/onnxruntime_perf_test -e tensorrt -r 1 ${ONNX_MODEL_2}/${ONNX_MODEL_2}.onnx
 echo $(date +"%Y-%m-%d %H:%M:%S") '[valgrind] Analyzing valgrind log'
 
 found_leak_summary=false

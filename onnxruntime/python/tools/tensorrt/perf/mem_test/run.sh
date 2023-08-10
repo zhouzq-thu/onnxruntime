@@ -121,18 +121,18 @@ if [ "$is_mem_leaked" = "true" ]; then
     # Stop caching and export buffer when isDefinitelyLost, line=="" and isOrtTrtRelated
     isDefinitelyLost && $0 == "" {isDefinitelyLost = 0; if(isOrtTrtRelated==1) {print buffer}}
     ' valgrind.log > ort_trt_memleak_detail.log
-
-    # Check if any ORT-TRT related memleak info has been parsed
-    if [ -s ort_trt_memleak_detail.log ]; then
-        mv ort_trt_memleak_detail.log result
-	    echo $(date +"%Y-%m-%d %H:%M:%S") '[valgrind] ORT-TRT memleak detail log parsed in CI artifact: ort_trt_memleak_detail.log'
-        exit 1
-    else
-	    rm ort_trt_memleak_detail.log
-    fi
 fi
 
 mv valgrind.log result
+
+ # Check if any ORT-TRT related memleak info has been parsed
+if [ -s ort_trt_memleak_detail.log ]; then
+    mv ort_trt_memleak_detail.log result
+	echo $(date +"%Y-%m-%d %H:%M:%S") '[valgrind] ORT-TRT memleak detail log parsed in CI artifact: ort_trt_memleak_detail.log'
+    exit 1
+else
+	rm ort_trt_memleak_detail.log
+fi
 
 # Run AddressSanitizer 
 ASAN_OPTIONS=${ASAN_OPTIONS} ./onnx_memtest

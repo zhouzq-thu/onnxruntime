@@ -8,6 +8,35 @@ import inspect
 from contextlib import contextmanager
 from typing import List, Optional, Set, Tuple
 from typing import List, Optional
+from collections import abc
+from typing import Callable, List, Optional, Tuple, Union
+
+import onnx
+import torch
+
+from onnxruntime.training.ortmodule import ORTModule
+
+from ._subscriber_base import SubscriberBase
+
+
+class _RuntimeStates:
+    """
+    A data struct holding states for runtime context. Tho kinds of states are included:
+    > Global states that are one-time collected during model hook registration. A global execution step is
+      also initialized to reflect how many steps have been executed, it will get updated after each step
+      completes its forward path.
+    > Intra-execution step states, initialized and cleaned up intended only for current execution step.
+      Usually, it carries intermediate information during the model execution.
+    """
+
+    class _GlobalStates:
+        def __init__(self):
+            # Used to track current execution step, e.g. how many forward/backward path is called.
+            self.execution_step = 0
+            # Used to store the depth of each module, which indicate the indentation level of the module.
+            self.module_index_to_depth = {}
+            # Used to store the unique id of each sequential activation.
+            self.module_to_module_index = {}
 
 import torch
 
@@ -28,6 +57,14 @@ def no_increase_global_step():
         yield
     finally:
         ORT_NO_INCREASE_GLOBAL_STEP[0] = False
+
+    @staticmethod
+    def infer_shape(
+        node: onnx.NodeProto,
+        tensor_input_shapes: List[Optional[List[Union[int, str]]]],
+        tensor_input_dtypes: List[torch.onnx.TensorProtoDataType],
+    ) -> Tuple[List[Optional[List[Union[int, str]]]], List[torch.onnx.TensorProtoDataType]]:
+        return tensor_input_shapes, tensor_input_dtypes
 
 
 class _IncrementStep(torch.autograd.Function):
@@ -58,6 +95,14 @@ class _IncrementStep(torch.autograd.Function):
     @staticmethod
     def backward(ctx, *grad_output: Tuple[Optional[torch.Tensor], ...]) -> Tuple[Optional[torch.Tensor], ...]:
         return (None, *tuple(g for g in grad_output))
+
+    @staticmethod
+    def infer_shape(
+        node: onnx.NodeProto,
+        tensor_input_shapes: List[Optional[List[Union[int, str]]]],
+        tensor_input_dtypes: List[torch.onnx.TensorProtoDataType],
+    ) -> Tuple[List[Optional[List[Union[int, str]]]], List[torch.onnx.TensorProtoDataType]]:
+        return tensor_input_shapes, tensor_input_dtypes
 
 
 class SubscriberManager:

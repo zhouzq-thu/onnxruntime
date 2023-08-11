@@ -74,11 +74,7 @@ jobs:
     DEPS_CACHE_DIR: $(Agent.TempDirectory)/deps_ccache
     ORT_CACHE_DIR: $(Agent.TempDirectory)/ort_ccache
     TODAY: $[format('{0:dd}{0:MM}{0:yyyy}', pipeline.startTime)]
-    ONNXRUNTIME_TEST_GPU_DEVICE_ID: ${{ parameters.OnnxruntimeTestGpuDeviceId }}
-    ${{ if eq(parameters.WITH_CACHE, true) }}:
-      PS_CACHE_ARG: '-use_cache'
-      PY_CACHE_ARG: '--use_cache'
-      MSBUILD_CACHE_ARG: '/p:CLToolExe=cl.exe /p:CLToolPath=C:\ProgramData\chocolatey\bin /p:TrackFileAccess=false /p:UseMultiToolTask=true /p:DebugInformationFormat=OldStyle'
+    ONNXRUNTIME_TEST_GPU_DEVICE_ID: ${{ parameters.OnnxruntimeTestGpuDeviceId }}    
   workspace:
     clean: all
   pool: ${{ parameters.MachinePool }}

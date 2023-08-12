@@ -185,11 +185,15 @@ FetchContent_Declare(
   URL ${DEP_URL_protobuf}
   URL_HASH SHA1=${DEP_SHA1_protobuf}
   PATCH_COMMAND ${ONNXRUNTIME_PROTOBUF_PATCH_COMMAND}
-  FIND_PACKAGE_ARGS 22.3.0 NAMES protobuf
+  FIND_PACKAGE_ARGS 3.21.12 NAMES Protobuf
 )
 
 set(protobuf_BUILD_TESTS OFF CACHE BOOL "Build protobuf tests" FORCE)
-set(protobuf_INSTALL OFF CACHE BOOL "Install protobuf binaries and files" FORCE)
+#TODO: we'd better to turn the following option off. However, it will cause 
+# ".\build.bat --config Debug --parallel --skip_submodule_sync --update" fail with an error message:
+# install(EXPORT "ONNXTargets" ...) includes target "onnx_proto" which requires target "libprotobuf-lite" that is 
+# not in any export set.
+#set(protobuf_INSTALL OFF CACHE BOOL "Install protobuf binaries and files" FORCE)
 set(protobuf_USE_EXTERNAL_GTEST ON CACHE BOOL "" FORCE)
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Android")

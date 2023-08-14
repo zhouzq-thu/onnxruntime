@@ -44,6 +44,7 @@ def _test_gemm(func, dtype: str, transa: bool, transb: bool, m: int, n: int, k: 
     ldb = b_shape[1]
     my_gemm = func(opa, opb, m, n, k, alpha, dev_a, lda, dev_b, ldb, beta, dev_c, n)
 
+    bound = 0.0001
     failures = {}
     print(f"dtype={dtype} {transab_to_suffix((transa, transb))} m={m:<5} n={n:<5} k={k:<5} bound: {bound}")
 
@@ -51,7 +52,8 @@ def _test_gemm(func, dtype: str, transa: bool, transb: bool, m: int, n: int, k: 
         if not my_gemm.SelectOp(impl):
             continue
         # Restore C Array
-        my_c.fill(1.0)
+        print(impl)
+        # my_c.fill(1.0)
         dev_c.UpdateDeviceArray()
         my_gemm.Run()
         dev_c.UpdateHostNumpyArray()
@@ -123,6 +125,15 @@ def test_gemm_tunable_alpha_beta(dtype, transa, transb, alpha, beta):
     _test_gemm(getattr(ke, wrapper_name), dtype, transa, transb, 128, 512, 384, alpha=alpha, beta=beta)
 
 
+def test_manual():
+    dtype = "float16"
+    transa, transb = False, False
+    alpha, beta = 1, 0
+    wrapper_name = f"CKGemm_{dtype_to_suffix(dtype)}_{transab_to_suffix((transa, transb))}"
+    # wrapper_name = f"GemmTunable_{dtype_to_suffix(dtype)}_{transab_to_suffix((transa, transb))}"
+    _test_gemm(getattr(ke, wrapper_name), dtype, transa, transb, 1, 1280, 5120, alpha=alpha, beta=beta)
+
+
 @dataclass
 class GemmMetric(ke.ComputeMetric):
     transa: bool
@@ -162,7 +173,7 @@ def profile_gemm_func(f, dtype: str, transa: bool, transb: bool, m: int, n: int,
     alpha = 1.0
     beta = 0.0
     my_gemm = f(opa, opb, m, n, k, alpha, dev_a, lda, dev_b, ldb, beta, dev_c, n)
-
+    my_gemm.SetRepeats(20)
     for impl in my_gemm.ListOps():
         duration_ms = -1
         if my_gemm.SelectOp(impl):

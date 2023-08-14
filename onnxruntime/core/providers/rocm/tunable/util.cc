@@ -15,7 +15,7 @@ Timer::Timer(hipStream_t stream) : TimerBase(stream) {
 }
 
 void Timer::Start() {
-  HIP_CALL_THROW(hipDeviceSynchronize());
+  // HIP_CALL_THROW(hipDeviceSynchronize());
   HIP_CALL_THROW(hipEventRecord(start_, stream_));
 }
 

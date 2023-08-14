@@ -3,6 +3,7 @@
 # Licensed under the MIT License.
 # --------------------------------------------------------------------------
 
+from collections import OrderedDict
 import copy
 import inspect
 import io
@@ -409,8 +410,12 @@ class GraphExecutionManager(GraphExecutionInterface):
             )
         exported_model = onnx.load_model_from_string(f.getvalue())
 
+        param_maps = OrderedDict({name: param for name, param in self._flattened_module.named_parameters()})
         exported_model = _post_process_after_export(
-            exported_model, self._runtime_options.enable_custom_autograd_function
+            exported_model,
+            self._runtime_options.enable_custom_autograd_function,
+            self._runtime_options.enable_zero_stage3_support,
+            param_maps
         )
 
         # Cache model for future runs

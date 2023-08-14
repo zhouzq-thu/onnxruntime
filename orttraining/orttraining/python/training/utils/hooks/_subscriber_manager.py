@@ -8,13 +8,11 @@ import inspect
 from contextlib import contextmanager
 from typing import List, Optional, Set, Tuple
 from typing import List, Optional
-from collections import abc
-from typing import Callable, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import onnx
 import torch
 
-from onnxruntime.training.ortmodule import ORTModule
 
 from ._subscriber_base import SubscriberBase
 

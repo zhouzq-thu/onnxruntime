@@ -6,11 +6,12 @@
 import inspect
 from collections import OrderedDict
 from types import CodeType, FunctionType
-from typing import Callable, Tuple
+from typing import Callable, Optional, Tuple, Union
 
+import onnx
 import torch
 
-from onnxruntime.training.utils import ORTModelInputOutputType, extract_data_and_schema, unflatten_data_using_schema
+from onnxruntime.training.utils import ORTModelInputOutputType, extract_data_and_schema, unflatten_data_using_schema, pytorch_dtype_to_onnx
 
 from ._subscriber_base import RuntimeStates, SubscriberBase
 
@@ -136,6 +137,8 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
             if param.ds_status == ZeroParamStatus.NOT_AVAILABLE:
                 partitioned_params.append(param)
 
+        ctx.partitioned_params = partitioned_params
+
         f_ret = pre_forward_with_kwargs_function(module, args, kwargs)
 
         if f_ret is None:
@@ -166,8 +169,60 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
             if ret is not None:
                 updated_grads = ret
 
-        return (None, None, None, None, None, None, None, *updated_grads)
+        # Update grad for partitioned parameters.
+        # TODO(pengwa)
 
+        input_count = len(updated_grads) - len(ctx.partitioned_params)
+
+        zeros = [torch.zeros_like(p) for p in ctx.partitioned_params]
+
+        pass_through_grads = updated_grads[:input_count] + tuple(zeros)
+
+        return (None, None, None, None, None, None, None, *pass_through_grads)
+
+    @staticmethod
+    def infer_shape(
+        node: onnx.NodeProto,
+        tensor_input_shapes: List[Optional[List[Union[int, str]]]],
+        tensor_input_dtypes: List[torch.onnx.TensorProtoDataType],
+    ) -> Tuple[List[Optional[List[Union[int, str]]]], List[torch.onnx.TensorProtoDataType]]:
+        import ctypes
+        # input_pointer_scalar_positions_attr_name = "input_pointer_scalar_positions"
+        input_pointer_scalars_attr_name = "input_pointer_scalars"
+        # found = [attr for attr in node.attribute if attr.name == input_pointer_scalar_positions_attr_name]
+        # assert len(found) == 1
+        # input_pointer_scalar_positions = found[0].ints
+        found = [attr for attr in node.attribute if attr.name == input_pointer_scalars_attr_name]
+        assert len(found) == 1
+        input_pointer_scalars = found[0].ints
+        print("input_pointer_scalars[0]: ", input_pointer_scalars[0])
+        module = ctypes.cast(input_pointer_scalars[0], ctypes.py_object).value
+
+        print(f"infer_shape for module: {module.__class__.__name__}")
+
+
+        from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
+        from deepspeed.runtime.zero.partitioned_param_coordinator import iter_params
+
+        # Retrieve the parameters that are not available for this module.
+        params_to_fetch = frozenset(iter_params(module))
+        partitioned_params = []
+        for param in params_to_fetch:
+            if param.ds_status == ZeroParamStatus.NOT_AVAILABLE:
+                partitioned_params.append(param)
+
+        tensor_output_shapes = tensor_input_shapes
+        tensor_output_dtypes = tensor_input_dtypes
+
+        start_offset = len(tensor_input_shapes) - len(partitioned_params)
+        for i in range(len(partitioned_params)):
+            tensor_output_shapes[start_offset + i] = list(partitioned_params[i].ds_shape)
+            tensor_output_dtypes[start_offset + i] = pytorch_dtype_to_onnx(partitioned_params[i].dtype)
+
+        assert len(tensor_output_shapes) == len(tensor_input_shapes)
+        assert len(tensor_output_dtypes) == len(tensor_input_dtypes)
+
+        return tensor_output_shapes, tensor_output_dtypes
 
 class ORTZeROOffloadPostForwardFunction(torch.autograd.Function):
     @staticmethod
@@ -214,6 +269,13 @@ class ORTZeROOffloadPostForwardFunction(torch.autograd.Function):
                 updated_args = ret
         return (None, None, None, None, *updated_args)
 
+    @staticmethod
+    def infer_shape(
+        node: onnx.NodeProto,
+        tensor_input_shapes: List[Optional[List[Union[int, str]]]],
+        tensor_input_dtypes: List[torch.onnx.TensorProtoDataType],
+    ) -> Tuple[List[Optional[List[Union[int, str]]]], List[torch.onnx.TensorProtoDataType]]:
+        return tensor_input_shapes, tensor_input_dtypes
 
 class _ZeROOffloadFunctions:
     def __init__(self, one_time_init: _ZeROOffloadOneTimeInitializer, offloader) -> None:

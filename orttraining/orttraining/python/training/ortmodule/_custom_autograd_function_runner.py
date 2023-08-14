@@ -3,6 +3,7 @@
 # Licensed under the MIT License.
 # --------------------------------------------------------------------------
 
+from collections import OrderedDict
 import sys
 import warnings
 from typing import Callable, Dict, List, Optional, Tuple
@@ -38,7 +39,7 @@ class CustomFuncOpKernelInfo:
 
         # To align with PyTorch `ctx.set_materialize_grads(False|True)``
         self.materialize_grads: bool = False
-        self.materialize_grads_config: Optional[Tuple[torch.device, torch.dtype, torch.shape]] = None
+        self.materialize_grads_config: Optional[Dict[int, Tuple[torch.device, torch.dtype, torch.shape]]] = None
 
 
 # Map for all custom autograd function op kernels.
@@ -81,11 +82,31 @@ def _get_context(forward_tensor_outputs: List[torch.Tensor]) -> Tuple[any, Optio
     for arg in forward_tensor_outputs:
         if not isinstance(arg, torch.Tensor) or not hasattr(arg, "grad_fn"):
             continue
+
+        if arg.grad_fn is None:
+            # For following case, it is possible grad_fn exist, but its value is None,
+            # so we need to continue to search for the first tensor having a non-None grad_fn.
+            #
+            # >>> w = torch.randn(5, 6)
+            # >>> v = w
+            # >>> hasattr(v, "grad_fn")
+            # True
+            # >>> hasattr(w, "grad_fn")
+            # True
+            # >>> w.grad_fn is None
+            # True
+            #
+            continue
+
         # Use the first context we see because all of arg's share the same one.
         ctx = arg.grad_fn
         first_tensor_output = arg
         break
 
+
+    if first_tensor_output is not None:
+        assert ctx is not None, f"ctx should not be None if first_tensor_output is not None."\
+                                f"{first_tensor_output.grad_fn}, {first_tensor_output.size()}, {first_tensor_output.dtype}"
     return (ctx, first_tensor_output)
 
 
@@ -94,6 +115,7 @@ def _epilogize_forward(
     tensors_generated_by_ort: List[Tuple[int, torch.Tensor]],
     ctx: any,
     tensor_owning_ctx: Optional[torch.Tensor],
+    forward_output_tensors,
 ):
     """Complete the epilogue of forward runner.
 
@@ -122,9 +144,10 @@ def _epilogize_forward(
             ]
             warnings.warn("Add input index to _GlobalOpKernelInfoMap, to avoid extra copy in every iteration.")
         kernel_info.materialize_grads = torch_interop_utils.get_materialize_grads(tensor_owning_ctx)
-        for _, tensor in tensors_generated_by_ort:
-            if tensor.requires_grad is False:
-                kernel_info.materialize_grads_config = (
+        kernel_info.materialize_grads_config = OrderedDict()
+        for output_index, tensor in enumerate(forward_output_tensors):
+            if isinstance(tensor, torch.Tensor):
+                kernel_info.materialize_grads_config[output_index] = (
                     tensor.device,
                     tensor.dtype,
                     tensor.shape,
@@ -226,12 +249,12 @@ def call_python_forward_function(
             if isinstance(result, torch.Tensor):
                 ctx, tensor_owning_ctx = _get_context([result])
                 if is_training_mode and ctx:
-                    _epilogize_forward(kernel_invoke_id, wrapped_tensor_args, ctx, tensor_owning_ctx)
+                    _epilogize_forward(kernel_invoke_id, wrapped_tensor_args, ctx, tensor_owning_ctx, [result])
                 unwrapped_values = [ctx, to_dlpack(result)]
             elif isinstance(result, (tuple, list)):
                 ctx, tensor_owning_ctx = _get_context(result)
                 if is_training_mode and ctx:
-                    _epilogize_forward(kernel_invoke_id, wrapped_tensor_args, ctx, tensor_owning_ctx)
+                    _epilogize_forward(kernel_invoke_id, wrapped_tensor_args, ctx, tensor_owning_ctx, result)
                 wrapped = [ctx]
                 wrapped.extend(list(to_dlpack(value) if value is not None else None for value in result))
                 # Inside the returned list, first element is context and the rest
@@ -295,12 +318,13 @@ def call_python_backward_function(
             ctx = args[0]
             fw_kernel_invoke_id = ctx.fw_kernel_invoke_id
             wrapped_args = []
-            for grad_flag, tensor_flag, arg in zip(requires_grad_flags, tensor_type_flags, args):
+            for grad_input_index, (grad_flag, tensor_flag, arg) in enumerate(zip(requires_grad_flags, tensor_type_flags, args)):
                 # If an input is a tensor, it is possible we get a None also when it is optional as grad input.
                 if tensor_flag:
                     if arg is None:
                         if _GlobalOpKernelInfoMap[fw_kernel_invoke_id].materialize_grads:
-                            config = _GlobalOpKernelInfoMap[fw_kernel_invoke_id].materialize_grads_config
+                            # ignore the ctx output.
+                            config = _GlobalOpKernelInfoMap[fw_kernel_invoke_id].materialize_grads_config[grad_input_index - 1]
                             wrapped_arg = torch.zeros(config[2], device=config[0], dtype=config[1])
                         else:
                             wrapped_arg = arg

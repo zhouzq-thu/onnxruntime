@@ -4,9 +4,9 @@
 # --------------------------------------------------------------------------
 
 import sys
-from typing import Callable, ClassVar, Dict, Optional
+from typing import Callable, ClassVar, Dict, List, Optional, Tuple, Union
 
-import onnx
+from onnx import NodeProto, ModelProto, helper
 import torch
 import torch.utils.checkpoint
 from packaging import version
@@ -15,9 +15,10 @@ from torch.onnx import symbolic_helper
 from onnxruntime.capi._pybind_state import register_miscellaneous_const_input, register_torch_autograd_function
 from onnxruntime.training import ortmodule
 
-from ._custom_op_symbolic_registry import pytorch_type_to_onnx, wrap_custom_export_function
+from ._custom_op_symbolic_registry import wrap_custom_export_function
 from ._fallback import ORTModuleONNXModelException, wrap_exception
 from ._utils import get_fully_qualified_class_name, get_runtime_pytorch_version
+from onnxruntime.training.utils import pytorch_scalar_type_str_to_onnx
 
 
 class PythonOpShapeInferStore:
@@ -46,6 +47,11 @@ class PythonOpShapeInferStore:
         kclass_name = get_fully_qualified_class_name(kclass)
         if hasattr(kclass, "infer_shape") and kclass_name not in cls._CLASS_MAP:
             cls._CLASS_MAP[kclass_name] = kclass.infer_shape
+
+    @classmethod
+    def register_func(cls, name: str, func: Callable) -> None:
+        """Register a shape inference function for a torch.autograd.Function by name."""
+        cls._CLASS_MAP[name] = func
 
     @classmethod
     def get_shape_infer(cls, name: str) -> Optional[Callable]:
@@ -165,7 +171,7 @@ def _export_pt_1_10(g, n, *args, **kwargs):
             if call_type == "d":
                 # Got a tensor variable.
                 tensor_args.append(arg)
-                scalar_type = pytorch_type_to_onnx(arg.type().scalarType())
+                scalar_type = pytorch_scalar_type_str_to_onnx(arg.type().scalarType())
                 input_tensor_types.append(scalar_type)
                 input_tensor_ranks.append(arg.type().dim())
             elif call_type == "c":
@@ -236,7 +242,7 @@ def _export_pt_1_10(g, n, *args, **kwargs):
         output_tensor_ranks = []
         for arg in n.outputs():
             # Type of tensor's elements.
-            scalar_type = pytorch_type_to_onnx(arg.type().scalarType())
+            scalar_type = pytorch_scalar_type_str_to_onnx(arg.type().scalarType())
             output_tensor_types.append(scalar_type)
             output_tensor_ranks.append(arg.type().dim())
 
@@ -296,15 +302,20 @@ _export = wrap_custom_export_function(_export_pt_1_10)
 
 
 def _post_process_after_export(
-    exported_model: onnx.ModelProto, enable_custom_autograd_function: bool
-) -> onnx.ModelProto:
+    exported_model: ModelProto, enable_custom_autograd_function: bool,
+    enable_ort_compatible_state3: bool, param_maps
+) -> ModelProto:
     """Post process the exported model."""
     if enable_custom_autograd_function:
         exported_model = _post_process_enabling_autograd_function(exported_model)
+
+    if enable_ort_compatible_state3:
+        exported_model = _zero_stage3_post_processing(exported_model, param_maps)
+
     return exported_model
 
 
-def _post_process_enabling_autograd_function(exported_model: onnx.ModelProto) -> onnx.ModelProto:
+def _post_process_enabling_autograd_function(exported_model: ModelProto) -> ModelProto:
     # Loop all PythonOp, append "_ctx" as the first output.
     index = 0
     for node in exported_model.graph.node:
@@ -323,5 +334,122 @@ def _post_process_enabling_autograd_function(exported_model: onnx.ModelProto) ->
         if not node.name:
             node.name = f"{op_name_prefix}_id_{index}"
             index += 1
+
+    return exported_model
+
+
+
+def _zero_stage3_post_processing(exported_model, param_maps):
+
+    def _sinple_pass_through_infer_shape(
+            node: NodeProto,
+            tensor_input_shapes: List[Optional[List[Union[int, str]]]],
+            tensor_input_dtypes: List[torch.onnx.TensorProtoDataType],
+        ) -> Tuple[List[Optional[List[Union[int, str]]]], List[torch.onnx.TensorProtoDataType]]:
+            return tensor_input_shapes, tensor_input_dtypes
+
+    PythonOpShapeInferStore.register_func("deepspeed.runtime.zero.parameter_offload.PreBackwardFunction", _sinple_pass_through_infer_shape)
+    PythonOpShapeInferStore.register_func("deepspeed.runtime.zero.parameter_offload.PostBackwardFunction", _sinple_pass_through_infer_shape)
+
+    def _linear_infer_shape(
+            node: NodeProto,
+            tensor_input_shapes: List[Optional[List[Union[int, str]]]],
+            tensor_input_dtypes: List[torch.onnx.TensorProtoDataType],
+        ) -> Tuple[List[Optional[List[Union[int, str]]]], List[torch.onnx.TensorProtoDataType]]:
+        # output = input.matmul(weight.t())
+        shape1 = tensor_input_shapes[0] # input
+        shape2 = tensor_input_shapes[1] # weight
+
+        output_shape = tensor_input_shapes[0]
+
+        output_shape[-1] = shape2[-2]
+
+        print("shape1: ", shape1, "shape2: ", shape2, "output_shape: ", output_shape)
+
+        return [output_shape], [tensor_input_dtypes[0]]
+
+
+
+
+    PythonOpShapeInferStore.register_func("deepspeed.runtime.zero.linear.LinearFunctionForZeroStage3", _linear_infer_shape)
+
+
+    consumer_map = {}
+    for node in exported_model.graph.node:
+        for i in node.input:
+            if i not in consumer_map:
+                consumer_map[i] = []
+            if node not in consumer_map[i]:
+                consumer_map[i].append(node)
+
+    for graph_input in exported_model.graph.input:
+        if graph_input.name in param_maps and graph_input.name in consumer_map:
+            consumers = consumer_map[graph_input.name]
+            param_pull_node = None
+            for c in consumers:
+                if c.op_type != "PythonOp":
+                    continue
+
+                func_name = None
+                for attr in c.attribute:
+                    if attr.name == "func_name":
+                        func_name = attr.s.decode("utf-8") if isinstance(attr.s, bytes) else attr.s
+                        break
+
+                if func_name == "onnxruntime.training.utils.hooks._zero_offload_subscriber.ORTZeROOffloadPreForwardFunction":
+                    assert (
+                        param_pull_node is None
+                    ), "Multiple ORTZeROOffloadPreForwardFunction nodes found, it should happen"
+                    param_pull_node = c
+
+            if param_pull_node is None:
+                raise RuntimeError(
+                    "Fail to find ORTZeROOffloadPreForwardFunction for partitioned param: " + graph_input.name
+                )
+
+            index_offset_on_python_op_input = -1
+            for i, input_name in enumerate(param_pull_node.input):
+                if input_name == graph_input.name:
+                    index_offset_on_python_op_input = i
+                    break
+
+            assert index_offset_on_python_op_input >= 0, "index_offset_on_python_op_input not valid"
+            for c in consumers:
+                # Update all consumers to use the full-sized parameter output of param_pull_node.
+                if c != param_pull_node:
+                    input_tensor_ranks = []
+                    rank_attr = None
+
+                    # Handle PythonOp differently because its attribute has rank information, which should be
+                    # adjusted to the full-sized parameter output of param_pull_node.
+                    if c.op_type == "PythonOp":
+                        for attr in c.attribute:
+                            if attr.name == "func_name":
+                                func_name = attr.s.decode("utf-8") if isinstance(attr.s, bytes) else attr.s
+                            if attr.name == "input_tensor_ranks":
+                                input_tensor_ranks = attr.ints
+                                rank_attr = attr
+
+                    for i, input_name in enumerate(c.input):
+                        if input_name == graph_input.name:
+                            # param_pull_node's last N inputs and outputs are partitioned parameters.
+                            # So we get a negative index of the parameter among its input
+                            negative_input_index = index_offset_on_python_op_input - len(param_pull_node.input)
+
+                            # Then we can know the corresponding output index of the parameter
+                            output_index = len(param_pull_node.output) + negative_input_index
+                            c.input[i] = param_pull_node.output[output_index]
+
+                            if c.op_type == "PythonOp":
+                                assert (
+                                    len(input_tensor_ranks) > 0
+                                ), f"input_tensor_ranks: {input_tensor_ranks}, node: {c}"
+                                # The full size is stored in ds_shape attribute of the parameter.
+                                input_tensor_ranks[i] = len(param_maps[input_name].ds_shape)
+
+                    if c.op_type == "PythonOp":
+                        # Update the rank attribute of PythonOp.
+                        c.attribute.remove(rank_attr)
+                        c.attribute.append(helper.make_attribute("input_tensor_ranks", input_tensor_ranks))
 
     return exported_model

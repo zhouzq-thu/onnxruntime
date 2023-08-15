@@ -52,7 +52,7 @@ if($build_config -eq 'Release'){
 
 
 if($cpu_arch -eq 'x86'){
-  $cmake_extra_args +=  "-A", "Win32", "-T", "host=x64"
+  $cmake_extra_args +=  "-A", "Win32", "-T", "host=x64,version=14.37"
   $compile_flags += '/Qspectre'
   $linker_flags += '/machine:x86'
 } elseif($cpu_arch -eq 'x64') {

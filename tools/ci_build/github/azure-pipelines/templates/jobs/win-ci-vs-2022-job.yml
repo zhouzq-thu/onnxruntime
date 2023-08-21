@@ -84,7 +84,7 @@ jobs:
   pool: 
     name: ${{ parameters.MachinePool }}
     demands:
-      - ImageVersionOverride -equals 1.0.341495
+      - ImageVersionOverride -equals 1.0.343172
   timeoutInMinutes:  300
   steps:
   - checkout: self
@@ -315,9 +315,9 @@ jobs:
 
   - ${{ if eq(parameters.RunStaticCodeAnalysis, true) }}:
       - task: DeleteFiles@1
-        displayName: 'Delete binaries files from $(Build.BinariesDirectory)\RelWithDebInfo'
+        displayName: 'Delete binaries files from $(Build.BinariesDirectory)\RelWithDebInfo\RelWithDebInfo'
         inputs:
-          SourceFolder: '$(Build.BinariesDirectory)\RelWithDebInfo'
+          SourceFolder: '$(Build.BinariesDirectory)\RelWithDebInfo\RelWithDebInfo'
           Contents: |
            **/*.obj
            **/*.pdb

@@ -84,7 +84,7 @@ jobs:
   pool: 
     name: ${{ parameters.MachinePool }}
     demands:
-      - ImageVersionOverride -equals 1.0.343172
+      - ImageVersionOverride -equals 1.0.343524
   timeoutInMinutes:  300
   steps:
   - checkout: self

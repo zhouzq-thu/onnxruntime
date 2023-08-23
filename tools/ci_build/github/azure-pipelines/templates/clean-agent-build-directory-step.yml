@@ -1,5 +1,4 @@
 # cleans $(Agent.BuildDirectory) unconditionally on multiple platforms
-
 steps:
 - task: PublishTestResults@2
   displayName: 'Publish unit test results'
@@ -19,5 +18,4 @@ steps:
 
 - script: docker image prune -f
   displayName: Clean docker images
-  condition: eq(variables['Agent.OS'], 'Linux')
-  continueOnError: true
+  condition: and(eq(variables['Agent.OS'], 'Linux'), contains(variables['Agent.JobName'], 'ROCM'))

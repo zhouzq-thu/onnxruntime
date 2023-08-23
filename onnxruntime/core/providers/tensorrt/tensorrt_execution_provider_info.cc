@@ -184,7 +184,6 @@ ProviderOptions TensorrtExecutionProviderInfo::ToProviderOptions(const OrtTensor
       {tensorrt::provider_option_names::kProfilesOptShapes, kProfilesOptShapes_},
       {tensorrt::provider_option_names::kCudaGraphEnable, MakeStringWithClassicLocale(info.trt_cuda_graph_enable)},
       {tensorrt::provider_option_names::kCachePrefix, kCachePrefix_},
-
   };
   return options;
 }

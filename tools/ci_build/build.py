@@ -1046,14 +1046,17 @@ def generate_build_tree(
             nvcc_threads = os.cpu_count()
             try:
                 import psutil
+
                 free_memory_bytes = psutil.virtual_memory().available
-                while (free_memory_bytes <= 10 * 1024 * 1024 * 1024 * nvcc_threads and nvcc_threads >= 2):
+                while free_memory_bytes <= 10 * 1024 * 1024 * 1024 * nvcc_threads and nvcc_threads >= 2:
                     nvcc_threads = int(nvcc_threads / 2)
-            except ImportError:                
+            except ImportError:
                 print("Failed to import psutil. Please `pip install psutil` for better estimation of nvcc threads.")
         else:
             nvcc_threads = args.parallel
-        print(f"Set nvcc threads={nvcc_threads} based on is_linux={is_linux()}, free_memory_bytes={free_memory_bytes}, --nvcc_threads={args.nvcc_threads}, --parallel={args.parallel} and os.cpu_count()={os.cpu_count()}." )
+        print(
+            f"Set nvcc threads={nvcc_threads} based on is_linux={is_linux()}, free_memory_bytes={free_memory_bytes}, --nvcc_threads={args.nvcc_threads}, --parallel={args.parallel} and os.cpu_count()={os.cpu_count()}."
+        )
         cmake_args.append("-Donnxruntime_NVCC_THREADS=" + str(nvcc_threads))
     if args.use_rocm:
         cmake_args.append("-Donnxruntime_ROCM_HOME=" + rocm_home)

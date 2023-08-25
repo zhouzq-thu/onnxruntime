@@ -66,7 +66,7 @@ stages:
         isX86: false
         job_name_suffix: x64_release
         RunOnnxRuntimeTests: ${{ parameters.RunOnnxRuntimeTests }}
-        RunStaticCodeAnalysis: false
+        RunStaticCodeAnalysis: true
         isTraining: false
         ORT_EP_NAME: CPU
         GenerateDocumentation: false

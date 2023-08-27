@@ -101,7 +101,7 @@ jobs:
           msBuildArchitecture: amd64
           setupCommandlines: 'python $(Build.SourcesDirectory)\tools\ci_build\build.py --config Debug --build_dir $(Build.SourcesDirectory)\b --skip_submodule_sync --skip_tests --build_shared_lib --update --cmake_generator "Visual Studio 17 2022" --build_shared_lib --enable_onnx_tests ${{ parameters.additionalBuildFlags }} --cmake_extra_defines onnxruntime_ENABLE_STATIC_ANALYSIS=ON onnxruntime_ENABLE_LTO=OFF'
           msBuildCommandline: '"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\amd64\msbuild.exe" "$(Build.SourcesDirectory)\b\Debug\onnxruntime.sln" /p:RunCodeAnalysis=true /p:platform=${{ parameters.msbuildPlatform }} /p:configuration=Debug /p:VisualStudioVersion="17.0" /p:PreferredToolArchitecture=x64 /m:10'
-          excludedPaths: '$(Build.SourcesDirectory)\b#$(Build.SourcesDirectory)\cmake#$(Build.SourcesDirectory)\winml#$(Build.SourcesDirectory)\test#$(Build.SourcesDirectory)\include#$(Build.SourcesDirectory)\orttraining#$(Build.SourcesDirectory)\onnxruntime\core\common#$(Build.SourcesDirectory)\winml#$(Build.SourcesDirectory)\onnxruntime\core\dll#$(Build.SourcesDirectory)\onnxruntime\core\dlpack#$(Build.SourcesDirectory)\onnxruntime\core\eager#$(Build.SourcesDirectory)\onnxruntime\core\flatbuffers#$(Build.SourcesDirectory)\onnxruntime\core\framework#$(Build.SourcesDirectory)\onnxruntime\core\graph#$(Build.SourcesDirectory)\onnxruntime\core\language_interop_ops#$(Build.SourcesDirectory)\onnxruntime\core\mlas'
+          excludedPaths: '$(Build.SourcesDirectory)\b#$(Build.SourcesDirectory)\cmake'
           rulesetName: Custom
           customRuleset: $(Build.SourcesDirectory)\cmake\Sdl.ruleset
           publishXML: true

@@ -82,9 +82,10 @@ jobs:
   workspace:
     clean: all
   pool:
-    name: ${{ parameters.MachinePool }}
-    demands:
-      - ImageVersionOverride -equals 1.0.344639
+    #name: ${{ parameters.MachinePool }}
+    #demands:
+    # - ImageVersionOverride -equals 1.0.344639
+    name: onnxruntime-Win-CPU-2022-web
   timeoutInMinutes:  300
   steps:
   - checkout: self
@@ -100,7 +101,7 @@ jobs:
         inputs:
           msBuildArchitecture: amd64
           setupCommandlines: 'python $(Build.SourcesDirectory)\tools\ci_build\build.py --config Debug --build_dir $(Build.SourcesDirectory)\b --skip_submodule_sync --skip_tests --build_shared_lib --update --cmake_generator "Visual Studio 17 2022" --build_shared_lib --enable_onnx_tests ${{ parameters.additionalBuildFlags }} --cmake_extra_defines onnxruntime_ENABLE_STATIC_ANALYSIS=ON onnxruntime_ENABLE_LTO=OFF'
-          msBuildCommandline: '"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\amd64\msbuild.exe" "$(Build.SourcesDirectory)\b\Debug\onnxruntime.sln" /p:RunCodeAnalysis=true /p:platform=${{ parameters.msbuildPlatform }} /p:configuration=Debug /p:VisualStudioVersion="17.0" /p:PreferredToolArchitecture=x64 /m:31'
+          msBuildCommandline: '"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\amd64\msbuild.exe" "$(Build.SourcesDirectory)\b\Debug\onnxruntime.sln" /p:RunCodeAnalysis=true /p:platform=${{ parameters.msbuildPlatform }} /p:configuration=Debug /p:VisualStudioVersion="17.0" /p:PreferredToolArchitecture=x64'
           excludedPaths: '$(Build.SourcesDirectory)\b#$(Build.SourcesDirectory)\cmake'
           rulesetName: Custom
           customRuleset: $(Build.SourcesDirectory)\cmake\Sdl.ruleset

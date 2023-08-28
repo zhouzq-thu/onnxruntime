@@ -25,14 +25,12 @@ class ResizeOpBuilder : public BaseOpBuilder {
 
   Status IsOpSupported(QnnModelWrapper& qnn_model_wrapper,
                        const NodeUnit& node_unit,
-                       const logging::Logger& logger,
-                       bool is_quantized_model) const override final ORT_MUST_USE_RESULT;
+                       const logging::Logger& logger) const override final ORT_MUST_USE_RESULT;
 
  protected:
   Status ProcessInputs(QnnModelWrapper& qnn_model_wrapper,
                        const NodeUnit& node_unit,
                        const logging::Logger& logger,
-                       bool is_quantized_model,
                        std::vector<std::string>& input_names,
                        bool do_op_validation) const override ORT_MUST_USE_RESULT;
 
@@ -40,7 +38,6 @@ class ResizeOpBuilder : public BaseOpBuilder {
                                      const NodeUnit& node_unit,
                                      std::vector<std::string>&& input_names,
                                      const logging::Logger& logger,
-                                     bool is_quantized_model,
                                      bool do_op_validation) const override ORT_MUST_USE_RESULT;
 
  private:
@@ -179,10 +176,9 @@ static bool ArrayHasString(const std::array<std::string_view, N>& strings, std::
 // Need to do op validation in 1st call of GetCapability
 Status ResizeOpBuilder::IsOpSupported(QnnModelWrapper& qnn_model_wrapper,
                                       const NodeUnit& node_unit,
-                                      const logging::Logger& logger,
-                                      bool is_quantized_model) const {
+                                      const logging::Logger& logger) const {
   if (node_unit.Domain() == kMSInternalNHWCDomain) {
-    return AddToModelBuilder(qnn_model_wrapper, node_unit, logger, is_quantized_model, true);
+    return AddToModelBuilder(qnn_model_wrapper, node_unit, logger, true);
   }
 
   // QNN doesn't support anti-aliasing (added in opset 18)
@@ -196,7 +192,8 @@ Status ResizeOpBuilder::IsOpSupported(QnnModelWrapper& qnn_model_wrapper,
   // currently use QNN's Resize op for quantized models and either ResizeBilinear or ResizeNearestNeighbor for
   // non-quantized models. This requires separate validation for quantized models.
   // TODO: Use only Resize once QNN's Resize op works in the QNN cpu backend.
-  return is_quantized_model ? ValidateQDQOp(qnn_model_wrapper, node_unit) : ValidateOp(qnn_model_wrapper, node_unit);
+  bool is_npu_backend = IsNpuBackend(qnn_model_wrapper.GetQnnBackendType());
+  return is_npu_backend ? ValidateQDQOp(qnn_model_wrapper, node_unit) : ValidateOp(qnn_model_wrapper, node_unit);
 }
 
 Status ResizeOpBuilder::ValidateOp(QnnModelWrapper& qnn_model_wrapper, const NodeUnit& node_unit) const {
@@ -302,7 +299,6 @@ Status ResizeOpBuilder::ValidateQDQOp(QnnModelWrapper& qnn_model_wrapper, const 
 Status ResizeOpBuilder::ProcessInputs(QnnModelWrapper& qnn_model_wrapper,
                                       const NodeUnit& node_unit,
                                       const logging::Logger& logger,
-                                      bool is_quantized_model,
                                       std::vector<std::string>& input_names,
                                       bool do_op_validation) const {
   ORT_UNUSED_PARAMETER(do_op_validation);
@@ -310,7 +306,7 @@ Status ResizeOpBuilder::ProcessInputs(QnnModelWrapper& qnn_model_wrapper,
   // Only cares about the 1st input
   const auto& inputs = node_unit.Inputs();
 
-  ORT_RETURN_IF_ERROR(ProcessInput(qnn_model_wrapper, inputs[0], logger, is_quantized_model, input_names));
+  ORT_RETURN_IF_ERROR(ProcessInput(qnn_model_wrapper, inputs[0], logger, input_names));
 
   return Status::OK();
 }
@@ -319,13 +315,13 @@ Status ResizeOpBuilder::ProcessAttributesAndOutputs(QnnModelWrapper& qnn_model_w
                                                     const NodeUnit& node_unit,
                                                     std::vector<std::string>&& input_names,
                                                     const logging::Logger& logger,
-                                                    bool is_quantized_model,
                                                     bool do_op_validation) const {
   // The QNN Resize op does not currently work with the QNN cpu backend, but works with the HTP backend. Therefore, we
   // currently use QNN's Resize op for quantized models and either ResizeBilinear or ResizeNearestNeighbor for
   // non-quantized models. This requires separate handling for quantized models.
   // TODO: Use only Resize once QNN's Resize op works in the QNN cpu backend.
-  return is_quantized_model ? ProcessQDQOpAttrsAndOutputs(qnn_model_wrapper, node_unit, std::move(input_names), logger, do_op_validation) : ProcessOpAttrsAndOutputs(qnn_model_wrapper, node_unit, std::move(input_names), logger, do_op_validation);
+  bool is_quantized_node = NodeUnit::Type::QDQGroup == node_unit.UnitType();
+  return is_quantized_node ? ProcessQDQOpAttrsAndOutputs(qnn_model_wrapper, node_unit, std::move(input_names), logger, do_op_validation) : ProcessOpAttrsAndOutputs(qnn_model_wrapper, node_unit, std::move(input_names), logger, do_op_validation);
 }
 
 Status ResizeOpBuilder::ProcessOpAttrsAndOutputs(QnnModelWrapper& qnn_model_wrapper,
@@ -357,9 +353,9 @@ Status ResizeOpBuilder::ProcessOpAttrsAndOutputs(QnnModelWrapper& qnn_model_wrap
     qnn_half_pixel.bool8Value = static_cast<uint8_t>(1);
   }
   QnnParamWrapper qnn_align_corners_param(node_unit.Index(), node_unit.Name(),
-                                          qnn_def::align_corners, qnn_align_corners);
+                                          QNN_OP_RESIZE_BILINEAR_PARAM_ALIGN_CORNERS, qnn_align_corners);
   QnnParamWrapper qnn_half_pixel_param(node_unit.Index(), node_unit.Name(),
-                                       qnn_def::half_pixel_centers, qnn_half_pixel);
+                                       QNN_OP_RESIZE_BILINEAR_PARAM_HALF_PIXEL_CENTERS, qnn_half_pixel);
 
   std::vector<std::string> param_tensor_names;
   param_tensor_names.push_back(qnn_align_corners_param.GetParamTensorName());
@@ -368,7 +364,7 @@ Status ResizeOpBuilder::ProcessOpAttrsAndOutputs(QnnModelWrapper& qnn_model_wrap
   qnn_model_wrapper.AddParamWrapper(std::move(qnn_half_pixel_param));
 
   return ProcessOutputs(qnn_model_wrapper, node_unit, std::move(input_names), std::move(param_tensor_names),
-                        logger, false, do_op_validation, qnn_node_type);
+                        logger, do_op_validation, qnn_node_type);
 }
 
 Status ResizeOpBuilder::ProcessQDQOpAttrsAndOutputs(QnnModelWrapper& qnn_model_wrapper,
@@ -398,7 +394,7 @@ Status ResizeOpBuilder::ProcessQDQOpAttrsAndOutputs(QnnModelWrapper& qnn_model_w
     qnn_align_corners.dataType = QNN_DATATYPE_BOOL_8;
     qnn_align_corners.bool8Value = static_cast<uint8_t>(0);
     QnnParamWrapper qnn_align_corners_param(node_unit.Index(), node_unit.Name(),
-                                            qnn_def::align_corners, qnn_align_corners);
+                                            QNN_OP_RESIZE_BILINEAR_PARAM_ALIGN_CORNERS, qnn_align_corners);
     param_tensor_names.push_back(qnn_align_corners_param.GetParamTensorName());
     qnn_model_wrapper.AddParamWrapper(std::move(qnn_align_corners_param));
 
@@ -407,7 +403,7 @@ Status ResizeOpBuilder::ProcessQDQOpAttrsAndOutputs(QnnModelWrapper& qnn_model_w
     qnn_half_pixel.dataType = QNN_DATATYPE_BOOL_8;
     qnn_half_pixel.bool8Value = static_cast<uint8_t>(0);
     QnnParamWrapper qnn_half_pixel_param(node_unit.Index(), node_unit.Name(),
-                                         qnn_def::half_pixel_centers, qnn_half_pixel);
+                                         QNN_OP_RESIZE_BILINEAR_PARAM_HALF_PIXEL_CENTERS, qnn_half_pixel);
     param_tensor_names.push_back(qnn_half_pixel_param.GetParamTensorName());
     qnn_model_wrapper.AddParamWrapper(std::move(qnn_half_pixel_param));
   } else {
@@ -417,7 +413,7 @@ Status ResizeOpBuilder::ProcessQDQOpAttrsAndOutputs(QnnModelWrapper& qnn_model_w
     ORT_RETURN_IF_ERROR(GetQnnModeFromString(supported_coord_transf_modes, transformation_mode,
                                              "coordinate_transformation_mode", qnn_transformation_mode.uint32Value));
 
-    QnnParamWrapper qnn_transformation_mode_param(node_unit.Index(), node_unit.Name(), qnn_def::transformation_mode,
+    QnnParamWrapper qnn_transformation_mode_param(node_unit.Index(), node_unit.Name(), QNN_OP_RESIZE_PARAM_TRANSFORMATION_MODE,
                                                   qnn_transformation_mode);
     param_tensor_names.push_back(qnn_transformation_mode_param.GetParamTensorName());
     qnn_model_wrapper.AddParamWrapper(std::move(qnn_transformation_mode_param));
@@ -427,7 +423,7 @@ Status ResizeOpBuilder::ProcessQDQOpAttrsAndOutputs(QnnModelWrapper& qnn_model_w
     qnn_exclude_outside.dataType = QNN_DATATYPE_BOOL_8;
     qnn_exclude_outside.bool8Value = static_cast<uint8_t>(GetOnnxAttr(node_helper, onnx_exclude_outside_attr) != 0);
 
-    QnnParamWrapper qnn_exclude_outside_param(node_unit.Index(), node_unit.Name(), qnn_def::exclude_outside,
+    QnnParamWrapper qnn_exclude_outside_param(node_unit.Index(), node_unit.Name(), QNN_OP_RESIZE_PARAM_EXCLUDE_OUTSIDE,
                                               qnn_exclude_outside);
     param_tensor_names.push_back(qnn_exclude_outside_param.GetParamTensorName());
     qnn_model_wrapper.AddParamWrapper(std::move(qnn_exclude_outside_param));
@@ -437,7 +433,7 @@ Status ResizeOpBuilder::ProcessQDQOpAttrsAndOutputs(QnnModelWrapper& qnn_model_w
     qnn_interp_mode.dataType = QNN_DATATYPE_UINT_32;
     ORT_RETURN_IF_ERROR(GetQnnModeFromString(supported_modes, interp_mode, "mode", qnn_interp_mode.uint32Value));
 
-    QnnParamWrapper qnn_interp_mode_param(node_unit.Index(), node_unit.Name(), qnn_def::interpolation_mode,
+    QnnParamWrapper qnn_interp_mode_param(node_unit.Index(), node_unit.Name(), QNN_OP_RESIZE_PARAM_INTERPOLATION_MODE,
                                           qnn_interp_mode);
     param_tensor_names.push_back(qnn_interp_mode_param.GetParamTensorName());
     qnn_model_wrapper.AddParamWrapper(std::move(qnn_interp_mode_param));
@@ -450,7 +446,7 @@ Status ResizeOpBuilder::ProcessQDQOpAttrsAndOutputs(QnnModelWrapper& qnn_model_w
       ORT_RETURN_IF_ERROR(GetQnnModeFromString(supported_nearest_modes, nearest_mode, "nearest_mode",
                                                qnn_nearest_mode.uint32Value));
 
-      QnnParamWrapper qnn_nearest_mode_param(node_unit.Index(), node_unit.Name(), qnn_def::nearest_mode,
+      QnnParamWrapper qnn_nearest_mode_param(node_unit.Index(), node_unit.Name(), QNN_OP_RESIZE_PARAM_NEAREST_MODE,
                                              qnn_nearest_mode);
       param_tensor_names.push_back(qnn_nearest_mode_param.GetParamTensorName());
       qnn_model_wrapper.AddParamWrapper(std::move(qnn_nearest_mode_param));
@@ -458,7 +454,7 @@ Status ResizeOpBuilder::ProcessQDQOpAttrsAndOutputs(QnnModelWrapper& qnn_model_w
   }
 
   return ProcessOutputs(qnn_model_wrapper, node_unit, std::move(input_names), std::move(param_tensor_names),
-                        logger, true, do_op_validation, qnn_op_type);
+                        logger, do_op_validation, qnn_op_type);
 }
 
 void CreateResizeOpBuilder(const std::string& op_type, OpBuilderRegistrations& op_registrations) {

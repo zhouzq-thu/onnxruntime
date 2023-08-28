@@ -15,12 +15,14 @@ namespace qnn {
 OpBuilderRegistrations::OpBuilderRegistrations() {
   {
     CreateSimpleOpBuilder("Add", *this);
+    CreateSimpleOpBuilder("Asin", *this);
     CreateSimpleOpBuilder("Atan", *this);
     CreateSimpleOpBuilder("Mul", *this);
     CreateSimpleOpBuilder("Abs", *this);
     CreateSimpleOpBuilder("And", *this);
     CreateSimpleOpBuilder("Ceil", *this);
     CreateSimpleOpBuilder("Cos", *this);
+    CreateSimpleOpBuilder("Sign", *this);
     CreateSimpleOpBuilder("Div", *this);
     CreateSimpleOpBuilder("Equal", *this);
     CreateSimpleOpBuilder("Exp", *this);
@@ -49,7 +51,6 @@ OpBuilderRegistrations::OpBuilderRegistrations() {
     CreateSimpleOpBuilder("Sqrt", *this);
     CreateSimpleOpBuilder("Sub", *this);
     CreateSimpleOpBuilder("Tanh", *this);
-    CreateSimpleOpBuilder("Transpose", *this);
 
     CreateSimpleOpBuilder("LogSoftmax", *this);
     CreateSimpleOpBuilder("MatMul", *this);
@@ -59,6 +60,9 @@ OpBuilderRegistrations::OpBuilderRegistrations() {
     CreateSimpleOpBuilder("DequantizeLinear", *this);
 
     CreateSimpleOpBuilder("HardSwish", *this);
+
+    CreateSimpleOpBuilder("DepthToSpace", *this);
+    CreateSimpleOpBuilder("SpaceToDepth", *this);
   }
 
   {
@@ -75,6 +79,7 @@ OpBuilderRegistrations::OpBuilderRegistrations() {
 
   {
     CreateConvOpBuilder("Conv", *this);
+    CreateConvOpBuilder("ConvTranspose", *this);
   }
 
   {
@@ -112,10 +117,6 @@ OpBuilderRegistrations::OpBuilderRegistrations() {
   }
 
   {
-    CreateConvOpBuilder("ConvTranspose", *this);
-  }
-
-  {
     CreateSplitOpBuilder("Split", *this);
   }
 
@@ -140,7 +141,15 @@ OpBuilderRegistrations::OpBuilderRegistrations() {
   }
 
   {
+    CreateLayerNormOpBuilder("LayerNormalization", *this);
+  }
+
+  {
     CreateLRNOpBuilder("LRN", *this);
+  }
+
+  {
+    CreateTransposeOpBuilder("Transpose", *this);
   }
 }
 

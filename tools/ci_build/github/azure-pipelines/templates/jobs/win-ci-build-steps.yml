@@ -83,6 +83,14 @@ steps:
       createLogFile: true
     env:
       CCACHE_DIR: ${{parameters.CacheDir}}
+      CCACHE_DEBUG: "1"
+      CCACHE_DEBUG_DIR: "$(Build.BinariesDirectory)\${{parameters.BuildConfig}}\ccache_debug"
+
+  - task: PublishPipelineArtifact@1
+    inputs:
+      targetPath: "$(Build.BinariesDirectory)\${{parameters.BuildConfig}}\ccache_debug"
+      artifactType: 'pipeline'
+      artifactName: 'cache_debug'
 
   - ${{ if eq(parameters.WithCache, true) }}:
     - powershell: |

@@ -1707,7 +1707,10 @@ static const std::unordered_map<std::string_view, const HandlerInfo&> handler_ma
     {"Split", split_handler},
     {"Shape", shape_handler},
     {"Pad", pad_handler},
-    {"Resize", resize_handler},
+    // Execution providers tend to only implement Resize for specific layouts. Due to that, it's safer to not
+    // push a Transpose through a Resize unless the EP specifically checks that it can handle the change via an 
+    // extended handler. 
+    // {"Resize", resize_handler},
     {"ReduceSum", reduce_op_handler},
 
     {"ReduceLogSum", reduce_op_handler},

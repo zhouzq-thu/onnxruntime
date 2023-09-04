@@ -16,14 +16,17 @@ static bool EPAwareHandleResize(HandlerArgs& args) {
   // Whilst Resize is not technically layout sensitive, some execution providers implement handling for only one
   // layout. Due to that, only push a Transpose through a Resize once it is assigned and we know it's not being handled
   // by an EP that only supports a single layout.
-  const auto& layout_sensitive_eps = EPsWithLayoutSensitiveResize();
+  // const auto& layout_sensitive_eps = EPsWithLayoutSensitiveResize();
 
-  const auto& provider = args.ctx.provider_type;
-  if (provider.empty() || layout_sensitive_eps.find(provider) != layout_sensitive_eps.end()) {
-    return false;
-  }
+  // const auto& provider = args.ctx.provider_type;
+  // if (provider.empty() || layout_sensitive_eps.find(provider) != layout_sensitive_eps.end()) {
+  //   return false;
+  // }
 
-  return HandleResize(args);
+  if (args.ctx.provider_type == kCpuExecutionProvider)
+    return HandleResize(args);
+
+  return false;
 }
 
 constexpr HandlerInfo ep_aware_resize_handler = {&FirstInput, &EPAwareHandleResize};

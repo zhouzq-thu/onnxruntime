@@ -161,6 +161,16 @@ Status ConstantFolding::ApplyImpl(Graph& graph, bool& modified, int graph_level,
               constexpr bool skip_const_check = true;
               can_constant_fold_qdq_node_unit = can_constant_fold_node(node_x, skip_const_check) &&
                                                 can_constant_fold_node(probably_q, skip_const_check);
+            } else if (probably_q.OpType() == "Unsqueeze") {
+                // special case for when layout transform changes the layout of an initializer that is broadcast
+                // which results in initializer -> DQ -> Unsqueeze -> Transpose -> Q
+                // 
+                // Alternative would be to allow multiple nodes between DQ and Q that have single input/output edges
+                // and are deterministic. That simplifies the logic here but complicates the overall setup where we
+                // usually fix QDQ format models to have clean QDQ node groups.
+                //
+                // The motivation for doing this is to only require constant folding in a minimal build to fix
+                // 
             }
           }
         }

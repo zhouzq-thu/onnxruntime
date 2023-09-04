@@ -1,17 +1,17 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 514b98fde..59c8a568a 100644
+index fd03c9b20..d9f633729 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -1,7 +1,7 @@
- cmake_minimum_required(VERSION 3.14)
+@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.14)
  
+ set(version 1.1.0)
  # Check support for CUDA/HIP in Cmake
--project(composable_kernel)
-+project(composable_kernel LANGUAGES CXX HIP)
+-project(composable_kernel VERSION ${version})
++project(composable_kernel VERSION ${version} LANGUAGES CXX HIP)
  
  list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
  
-@@ -94,27 +94,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+@@ -145,27 +145,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
  set(CMAKE_CXX_EXTENSIONS OFF)
  message("CMAKE_CXX_COMPILER_ID: ${CMAKE_CXX_COMPILER_ID}")
  
@@ -39,7 +39,7 @@ index 514b98fde..59c8a568a 100644
  ## HIP
  find_package(HIP REQUIRED)
  # Override HIP version in config.h, if necessary.
-@@ -136,8 +115,6 @@ if( DEFINED CK_OVERRIDE_HIP_VERSION_PATCH )
+@@ -187,8 +166,6 @@ if( DEFINED CK_OVERRIDE_HIP_VERSION_PATCH )
      message(STATUS "CK_HIP_VERSION_PATCH overriden with ${CK_OVERRIDE_HIP_VERSION_PATCH}")
  endif()
  message(STATUS "Build with HIP ${HIP_VERSION}")
@@ -48,7 +48,7 @@ index 514b98fde..59c8a568a 100644
  
  ## tidy
  include(EnableCompilerWarnings)
-@@ -391,11 +368,3 @@ rocm_install(FILES
+@@ -457,11 +434,3 @@ install(FILES
  
  set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
  set(CPACK_RPM_PACKAGE_LICENSE "MIT")

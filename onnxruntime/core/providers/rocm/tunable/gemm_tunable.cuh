@@ -96,6 +96,21 @@ class GemmTunableOp : public TunableOp<GemmParams<T>> {
   }
 };
 
+template <typename TA, typename TB, typename TC, typename ALayout, typename BLayout>
+class F8GemmTunableOp : public TunableOp<F8GemmParams<TA, TB, TC>> {
+ public:
+  GemmTunableOp() {
+#ifdef USE_COMPOSABLE_KERNEL
+    for (auto&& [_, op] : GetCKF8GemmTypeStringAndOps<T, ALayout, BLayout>()) {
+      ORT_UNUSED_PARAMETER(_);
+      this->RegisterOp(std::move(op));
+    }
+#else
+    static_assert(false, "CK is required to support fp8 computing")
+#endif
+  }
+}
+
 template <typename T, typename ALayout, typename BLayout>
 class BatchedGemmTunableOp : public TunableOp<BatchedGemmParams<T>> {
  public:

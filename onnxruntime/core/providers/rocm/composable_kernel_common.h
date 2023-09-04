@@ -7,6 +7,7 @@
 #include "ck/utility/data_type.hpp"
 #endif
 
+#include "core/framework/float8.h"
 #include "core/providers/rocm/rocm_common.h"
 
 namespace onnxruntime {
@@ -27,6 +28,12 @@ template <>
 struct CKDataTypeAdaptor<BFloat16> {
   using type = ck::bhalf16_t;
 };
+
+template <>
+struct CKDataTypeAdaptor<Float8E4M3FN> {
+  using type = ck::f8_t;
+};
+
 #endif
 
 }  // namespace rocm

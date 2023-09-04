@@ -56,6 +56,20 @@ def create_virtual_device(sdk_tool_paths: SdkToolPaths, system_image_package_nam
 
     run(
         sdk_tool_paths.avdmanager,
+        "delete",
+        "avd",
+        "--name",
+        avd_name,
+    )
+
+    run(
+        sdk_tool_paths.avdmanager,
+        "list",
+        "avd",
+    )
+
+    run(
+        sdk_tool_paths.avdmanager,
         "create",
         "avd",
         "--name",

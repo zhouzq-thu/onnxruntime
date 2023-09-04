@@ -398,7 +398,7 @@ stages:
   # because coverage report is hard to support in cross machines.
   displayName: NNAPI MASTER BUILD&TEST
   dependsOn: []
-  condition: in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
+  # condition: in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
   jobs:
   - job: NNAPI_EP_MASTER
     pool:
@@ -408,7 +408,7 @@ stages:
     timeoutInMinutes: 180
     workspace:
       clean: all
-    condition: in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
+    # condition: in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
     steps:
       - script: |
           set -ex
@@ -473,11 +473,14 @@ stages:
             --build_dir build_nnapi \
             --android_sdk_path $ANDROID_HOME
         displayName: Retrieve runtime code coverage files from the emulator and analyze
+        condition: in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
       - script: cat '$(Build.SourcesDirectory)/build_nnapi/Debug/coverage_rpt.txt'
         displayName: Print coverage report
+        condition: in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
 
       - task: PublishPipelineArtifact@0
         displayName: 'Publish code coverage report'
+        condition: in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
         inputs:
             artifactName: "coverage_rpt.txt"
             targetPath: '$(Build.SourcesDirectory)/build_nnapi/Debug/coverage_rpt.txt'

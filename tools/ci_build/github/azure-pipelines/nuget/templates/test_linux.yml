@@ -45,6 +45,36 @@ stages:
       parameters:
         packageFolder: '$(Build.BinariesDirectory)/nuget-artifact'
 
+    - ${{ if contains(parameters.StageSuffix, 'GPU') }}:
+      - template: templates/get-docker-image-steps.yml
+        parameters:
+          Dockerfile: tools/ci_build/github/linux/docker/Dockerfile.manylinux2014_cuda11
+          Context: tools/ci_build/github/linux/docker
+          DockerBuildArgs: "--network=host --build-arg POLICY=manylinux2014 --build-arg PLATFORM=x86_64 --build-arg BASEIMAGE=${{variables.common_cuda_baseimg}} --build-arg DEVTOOLSET_ROOTPATH=/opt/rh/devtoolset-11/root --build-arg PREPEND_PATH=/opt/rh/devtoolset-11/root/usr/bin: --build-arg LD_LIBRARY_PATH_ARG=/opt/rh/devtoolset-11/root/usr/lib64:/opt/rh/devtoolset-11/root/usr/lib:/opt/rh/devtoolset-11/root/usr/lib64/dyninst:/opt/rh/devtoolset-11/root/usr/lib/dyninst:/usr/local/lib64 --build-arg BUILD_UID=$( id -u )"
+          Repository: onnxruntimecuda11build_withdotnet
+      - bash: |
+          mkdir -p $HOME/.onnx
+          docker run --rm \
+            --gpus all \
+            --volume /data/onnx:/data/onnx:ro \
+            --volume $(Build.SourcesDirectory):/onnxruntime_src \
+            --volume $(Build.BinariesDirectory):/build \
+            --volume /data/models:/build/models:ro \
+            --volume $HOME/.onnx:/home/onnxruntimedev/.onnx \
+            -e ALLOW_RELEASED_ONNX_OPSET_ONLY=0 \
+            -e NIGHTLY_BUILD \
+            -e BUILD_BUILDNUMBER \
+            onnxruntimecuda11build_withdotnet \
+            /bin/bash -c "
+              set -ex; \
+              pushd /onnxruntime_src/csharp; \
+              dotnet restore /onnxruntime_src/csharp/OnnxRuntime.DesktopOnly.CSharp.sln; \
+              dotnet build /onnxruntime_src/csharp/OnnxRuntime.DesktopOnly.CSharp.sln; \
+              dotnet test /onnxruntime_src/csharp/OnnxRuntime.DesktopOnly.CSharp.sln; -f net6.0 --no-build -l console;verbosity=normal; \
+              popd
+              "
+        displayName: 'Dotnet build C# sln and Test'
+
     - task: CmdLine@2
       displayName: 'Create symlink for test models'
       inputs:

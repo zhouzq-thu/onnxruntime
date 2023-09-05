@@ -1624,7 +1624,7 @@ def run_android_tests(args, source_dir, build_dir, config, cwd):
                     android.start_emulator(
                         sdk_tool_paths=sdk_tool_paths,
                         avd_name=avd_name,
-                        extra_args=["-partition-size", "2047", "-wipe-data"],
+                        extra_args=["-partition-size", "4096", "-wipe-data"],
                     )
                 )
                 context_stack.callback(android.stop_emulator, emulator_proc)

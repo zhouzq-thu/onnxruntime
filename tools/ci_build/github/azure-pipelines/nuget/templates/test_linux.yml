@@ -80,25 +80,26 @@ stages:
               "
         displayName: 'Dotnet build C# sln and Test'
 
-    - task: CmdLine@2
-      displayName: 'Create symlink for test models'
-      inputs:
-        script: |
-          ln -sf /data/models $(Build.BinariesDirectory)
+      ${{ else }}:
+        - task: CmdLine@2
+          displayName: 'Create symlink for test models'
+          inputs:
+            script: |
+              ln -sf /data/models $(Build.BinariesDirectory)
 
-    - task: Bash@3
-      displayName: 'Run Package Test'
-      inputs:
-        targetType: filePath
-        filePath: '$(Build.SourcesDirectory)/csharp/test/Microsoft.ML.OnnxRuntime.EndToEndTests/runtest.sh'
-        arguments: '$(Build.BinariesDirectory)/nuget-artifact $(NuGetPackageVersionNumber)'
-        workingDirectory: $(Build.BinariesDirectory)
-      env:
-        OnnxRuntimeBuildDirectory: $(Build.BinariesDirectory)
-        DisableContribOps: $(DisableContribOps)
-        DisableMlOps: $(DisableMlOps)
-        IsReleaseBuild: $(IsReleaseBuild)
-        PACKAGENAME: ${{ parameters.NugetPackageName }}
+        - task: Bash@3
+          displayName: 'Run Package Test'
+          inputs:
+            targetType: filePath
+            filePath: '$(Build.SourcesDirectory)/csharp/test/Microsoft.ML.OnnxRuntime.EndToEndTests/runtest.sh'
+            arguments: '$(Build.BinariesDirectory)/nuget-artifact $(NuGetPackageVersionNumber)'
+            workingDirectory: $(Build.BinariesDirectory)
+          env:
+            OnnxRuntimeBuildDirectory: $(Build.BinariesDirectory)
+            DisableContribOps: $(DisableContribOps)
+            DisableMlOps: $(DisableMlOps)
+            IsReleaseBuild: $(IsReleaseBuild)
+            PACKAGENAME: ${{ parameters.NugetPackageName }}
 
     - template: ../../templates/component-governance-component-detection-steps.yml
       parameters:

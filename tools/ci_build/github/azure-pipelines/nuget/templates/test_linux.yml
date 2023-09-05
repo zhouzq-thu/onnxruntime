@@ -45,13 +45,13 @@ stages:
       parameters:
         packageFolder: '$(Build.BinariesDirectory)/nuget-artifact'
 
-
-    - template: ../../templates/get-docker-image-steps.yml
-      parameters:
-        Dockerfile: tools/ci_build/github/linux/docker/Dockerfile.manylinux2014_cuda11
-        Context: tools/ci_build/github/linux/docker
-        DockerBuildArgs: "--network=host --build-arg POLICY=manylinux2014 --build-arg PLATFORM=x86_64 --build-arg BASEIMAGE=${{variables.common_cuda_baseimg}} --build-arg DEVTOOLSET_ROOTPATH=/opt/rh/devtoolset-11/root --build-arg PREPEND_PATH=/opt/rh/devtoolset-11/root/usr/bin: --build-arg LD_LIBRARY_PATH_ARG=/opt/rh/devtoolset-11/root/usr/lib64:/opt/rh/devtoolset-11/root/usr/lib:/opt/rh/devtoolset-11/root/usr/lib64/dyninst:/opt/rh/devtoolset-11/root/usr/lib/dyninst:/usr/local/lib64 --build-arg BUILD_UID=$( id -u )"
-        Repository: onnxruntimecuda11build_withdotnet
+    - ${{ if contains(parameters.StageSuffix, 'GPU')}}:
+      - template: ../../templates/get-docker-image-steps.yml
+        parameters:
+          Dockerfile: tools/ci_build/github/linux/docker/Dockerfile.manylinux2014_cuda11
+          Context: tools/ci_build/github/linux/docker
+          DockerBuildArgs: "--network=host --build-arg POLICY=manylinux2014 --build-arg PLATFORM=x86_64 --build-arg BASEIMAGE=${{variables.common_cuda_baseimg}} --build-arg DEVTOOLSET_ROOTPATH=/opt/rh/devtoolset-11/root --build-arg PREPEND_PATH=/opt/rh/devtoolset-11/root/usr/bin: --build-arg LD_LIBRARY_PATH_ARG=/opt/rh/devtoolset-11/root/usr/lib64:/opt/rh/devtoolset-11/root/usr/lib:/opt/rh/devtoolset-11/root/usr/lib64/dyninst:/opt/rh/devtoolset-11/root/usr/lib/dyninst:/usr/local/lib64 --build-arg BUILD_UID=$( id -u )"
+          Repository: onnxruntimecuda11build_withdotnet
 
     - bash: |
         mkdir -p $HOME/.onnx
@@ -79,13 +79,6 @@ stages:
             popd
             "
       displayName: 'Dotnet build C# sln and Test'
-
-
-    - task: CmdLine@2
-      displayName: 'Create symlink for test models'
-      inputs:
-        script: |
-          ln -sf /data/models $(Build.BinariesDirectory)
 
     - task: Bash@3
       displayName: 'Run Package Test'

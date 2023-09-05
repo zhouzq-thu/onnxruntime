@@ -1624,7 +1624,7 @@ def run_android_tests(args, source_dir, build_dir, config, cwd):
                     android.start_emulator(
                         sdk_tool_paths=sdk_tool_paths,
                         avd_name=avd_name,
-                        extra_args=["-partition-size", "4096", "-wipe-data"],
+                        extra_args=["-partition-size", "2047", "-wipe-data"],
                     )
                 )
                 context_stack.callback(android.stop_emulator, emulator_proc)
@@ -1638,6 +1638,10 @@ def run_android_tests(args, source_dir, build_dir, config, cwd):
             adb_push("onnx_test_runner", device_dir, cwd=cwd)
             adb_shell(f"chmod +x {device_dir}/onnx_test_runner")
             run_adb_shell(f"{device_dir}/onnxruntime_test_all")
+
+            # remove onnxruntime_test_all as it takes up a _lot_ of space and can cause insufficient storage errors
+            # when we try to copy the java app to the device.
+            adb_shell(f"rm {device_dir}/onnxruntime_test_all")
 
             if args.build_java:
                 # use the gradle wrapper under <repo root>/java

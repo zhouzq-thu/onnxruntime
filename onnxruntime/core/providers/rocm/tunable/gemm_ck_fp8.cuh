@@ -11,11 +11,9 @@
 #include "core/providers/rocm/composable_kernel_common.h"
 
 #include "ck/ck.hpp"
-#include "ck/library/tensor_operation_instance/gpu/batched_gemm.hpp"
-#include "ck/library/tensor_operation_instance/gpu/gemm.hpp"
 #include "ck/tensor_operation/gpu/device/tensor_layout.hpp"
-#include "ck/tensor_operation/gpu/device/device_batched_gemm.hpp"
-#include "ck/tensor_operation/gpu/device/device_gemm.hpp"
+// #include "ck/tensor_operation/gpu/device/device_gemm.hpp"
+#include "ck/library/tensor_operation_instance/gpu/gemm_splitk.hpp"
 #include "ck/tensor_operation/gpu/element/element_wise_operation.hpp"
 #endif
 
@@ -25,10 +23,24 @@
 namespace onnxruntime {
 namespace rocm {
 namespace tunable {
+
+struct Scale {
+  explicit Scale(const float* dev_scale_ptr) : dev_scale_ptr{dev_scale_ptr} {}
+  explicit Scale(float host_scale_value) : dev_scale_ptr{nullptr}, scale_value{host_scale_value} {}
+
+  __forceinline__ __device__ void operator()(ck::half_t& y, const ck::f8_t& x) const {
+    float scale = nullptr == dev_scale_ptr ? scale_value : *dev_scale_ptr;
+    y = ck::type_convert<ck::half_t>(scale * ck::type_convert<float>(x));
+  }
+
+  const float* dev_scale_ptr;
+  float scale_value;
+};
+
 namespace blas {
 
 template <typename TA, typename TB, typename TC>
-struct F8GemmParams : tunable::OpParams {
+struct FP8GemmParams : tunable::OpParams {
   std::string Signature() const override {
     return MakeString(BlasOpToString(opa), BlasOpToString(opb), "_", m, "_", n, "_", k);
   }
@@ -39,41 +51,21 @@ struct F8GemmParams : tunable::OpParams {
   int64_t m;
   int64_t n;
   int64_t k;
-  float a_scale{};
-  const float* a_scale_dev{};
+  float scale_a{};
+  const float* scale_a_dev{};
   const TA* a;
   int64_t lda;
-  float b_scale{};
-  const float* b_scale_dev{};
+  float scale_b{};
+  const float* scale_b_dev{};
   const TB* b;
   int64_t ldb;
   TC* c;
-  float c_scale{};
-  const float* c_scale_dev{};
+  float scale_c{};
+  const float* scale_c_dev{};
   int64_t ldc;
 };
 
 namespace internal {
-
-struct Scale {
-  explicit Scale(const float* dev_ptr) : dev_ptr{dev_ptr} {
-  }
-  explicit Scale(float host_value) : dev_ptr{nullptr}, value{host_value} {
-  }
-
-  __forceinline__ __device__ void operator()(float& y, const ck::f8_t& x) const {
-    float scale;
-    if (dev_ptr) {
-      scale = ck::type_convert<float>(*dev_ptr);
-    } else {
-      scale = ck::type_convert<float>(value);
-    }
-    y = scale * ck::type_convert<float>(x);
-  }
-
-  const float* dev_ptr;
-  float value;
-};
 
 #ifdef USE_COMPOSABLE_KERNEL
 
@@ -82,11 +74,19 @@ using Col = ck::tensor_layout::gemm::ColumnMajor;
 
 using Nop = ck::tensor_operation::element_wise::PassThrough;
 
+void add_device_gemm_xdl_splitk_f8_f16_f16_mk_kn_mn_instances(
+    std::vector<std::unique_ptr<ck::tensor_operation::device::DeviceGemmSplitK<
+        Row, Row, Row, ck::f8_t, ck::half_t, ck::half_t, Scale, Nop, Nop>>>& instances);
+
+void add_device_gemm_xdl_splitk_f16_f8_f16_mk_kn_mn_instances(
+    std::vector<std::unique_ptr<ck::tensor_operation::device::DeviceGemmSplitK<
+        Row, Row, Row, ck::half_t, ck::f8_t, ck::half_t, Nop, Scale, Nop>>>& instances);
+
 template <typename CKT>
-auto CreateOp(float scale, const float* scale_dev) {
+auto CreateOp(float scale, const float* dev_scale) {
   if constexpr (std::is_same_v<CKT, ck::f8_t>) {
-    if (scale_dev != nullptr) {
-      return Scale(scale_dev);
+    if (dev_scale != nullptr) {
+      return Scale(dev_scale);
     } else {
       return Scale(scale);
     }
@@ -105,25 +105,33 @@ auto GetCKF8SplitKGemmTypeStringAndOps() {
   using OpB = std::conditional_t<std::is_same_v<CKTB, ck::f8_t>, Scale, Nop>;
   using OpC = std::conditional_t<std::is_same_v<CKTC, ck::f8_t>, Scale, Nop>;
 
-  using DeviceGemm = ck::tensor_operation::device::DeviceGemm<
+  using DeviceGemm = ck::tensor_operation::device::DeviceGemmSplitK<
       ALayout, BLayout, Row,
       CKTA, CKTB, CKTC,
       OpA, OpB, OpC>;
-  using InstanceFactory = ck::tensor_operation::device::instance::DeviceOperationInstanceFactory<DeviceGemm>;
 
-  std::vector<std::pair<std::string, Op<F8GemmParams<TA, TB, TC>>>> ret;
-  for (auto&& impl : InstanceFactory::GetInstances()) {
+  std::vector<std::pair<std::string, Op<FP8GemmParams<TA, TB, TC>>>> ret;
+  std::vector<std::unique_ptr<DeviceGemm>> instances{};
+  // FIXME: only supports fp8_fp16_fp16_row_row_row and fp16_fp8_fp16_row_row_row now.
+  if constexpr (std::is_same_v<CKTA, ck::f8_t> && std::is_same_v<CKTB, ck::half_t> && std::is_same_v<CKTC, ck::half_t>) {
+    add_device_gemm_xdl_splitk_f8_f16_f16_mk_kn_mn_instances(instances);
+  } else if constexpr (std::is_same_v<CKTA, ck::half_t> && std::is_same_v<CKTB, ck::f8_t> && std::is_same_v<CKTC, ck::half_t>) {
+    add_device_gemm_xdl_splitk_f16_f8_f16_mk_kn_mn_instances(instances);
+  } else {
+    // static_assert(false, "no instances");
+  }
+  for (auto&& impl : instances) {
     auto type_string = impl->GetTypeString();
     auto invoker = impl->MakeInvokerPointer();
-    auto ck_gemm_op = [impl = std::move(impl), invoker = std::move(invoker)](const F8GemmParams<TA, TB, TC>* params) -> Status {
-      OpA op_a = CreateOp<CKTA>(params->a_scale, params->a_scale_dev);
-      OpA op_b = CreateOp<CKTB>(params->b_scale, params->b_scale_dev);
-      OpA op_c = CreateOp<CKTC>(params->c_scale, params->c_scale_dev);
+    auto ck_gemm_op = [impl = std::move(impl), invoker = std::move(invoker)](const FP8GemmParams<TA, TB, TC>* params) -> Status {
+      OpA op_a = CreateOp<CKTA>(params->scale_a, params->scale_a_dev);
+      OpB op_b = CreateOp<CKTB>(params->scale_b, params->scale_b_dev);
+      OpC op_c = CreateOp<CKTC>(params->scale_c, params->scale_c_dev);
 
       auto arg = impl->MakeArgumentPointer(params->a, params->b, params->c,
                                            params->m, params->n, params->k,
                                            params->lda, params->ldb, params->ldc,
-                                           op_a, op_b, op_c);
+                                           op_a, op_b, op_c, 4);
       TUNABLE_OP_RETURN_UNSUPPORTED_ARGUMENT_IF(!impl->IsSupportedArgument(arg.get()),
                                                 impl->GetTypeString(), " does not support ", params->Signature());
       invoker->Run(arg.get(), StreamConfig{params->StreamHandle()});

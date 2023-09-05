@@ -117,8 +117,9 @@ stages:
         signingOption: 'manual'
         signingIdentity: '$(APPLE_CERTIFICATE_SIGNING_IDENTITY)'
         provisioningProfileName: 'iOS Team Provisioning Profile'
-        args: '-derivedDataPath $(Build.BinariesDirectory)/app_center_test/ios_package_test/DerivedData -verbose'
+        args: '-verbose -derivedDataPath $(Build.BinariesDirectory)/app_center_test/ios_package_test/DerivedData'
         workingDirectory: '$(Build.BinariesDirectory)/app_center_test/ios_package_test/'
+        useXcpretty: false
       displayName: 'Build App Center iPhone arm64 tests'
 
     - script: |

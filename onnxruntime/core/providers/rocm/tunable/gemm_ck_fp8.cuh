@@ -111,33 +111,36 @@ auto GetCKF8SplitKGemmTypeStringAndOps() {
       OpA, OpB, OpC>;
 
   std::vector<std::pair<std::string, Op<FP8GemmParams<TA, TB, TC>>>> ret;
-  std::vector<std::unique_ptr<DeviceGemm>> instances{};
-  // FIXME: only supports fp8_fp16_fp16_row_row_row and fp16_fp8_fp16_row_row_row now.
-  if constexpr (std::is_same_v<CKTA, ck::f8_t> && std::is_same_v<CKTB, ck::half_t> && std::is_same_v<CKTC, ck::half_t>) {
-    add_device_gemm_xdl_splitk_f8_f16_f16_mk_kn_mn_instances(instances);
-  } else if constexpr (std::is_same_v<CKTA, ck::half_t> && std::is_same_v<CKTB, ck::f8_t> && std::is_same_v<CKTC, ck::half_t>) {
-    add_device_gemm_xdl_splitk_f16_f8_f16_mk_kn_mn_instances(instances);
-  } else {
-    // static_assert(false, "no instances");
-  }
-  for (auto&& impl : instances) {
-    auto type_string = impl->GetTypeString();
-    auto invoker = impl->MakeInvokerPointer();
-    auto ck_gemm_op = [impl = std::move(impl), invoker = std::move(invoker)](const FP8GemmParams<TA, TB, TC>* params) -> Status {
-      OpA op_a = CreateOp<CKTA>(params->scale_a, params->scale_a_dev);
-      OpB op_b = CreateOp<CKTB>(params->scale_b, params->scale_b_dev);
-      OpC op_c = CreateOp<CKTC>(params->scale_c, params->scale_c_dev);
 
-      auto arg = impl->MakeArgumentPointer(params->a, params->b, params->c,
-                                           params->m, params->n, params->k,
-                                           params->lda, params->ldb, params->ldc,
-                                           op_a, op_b, op_c, 4);
-      TUNABLE_OP_RETURN_UNSUPPORTED_ARGUMENT_IF(!impl->IsSupportedArgument(arg.get()),
-                                                impl->GetTypeString(), " does not support ", params->Signature());
-      invoker->Run(arg.get(), StreamConfig{params->StreamHandle()});
-      return Status::OK();
-    };
-    ret.emplace_back(std::make_pair(std::move(type_string), std::move(ck_gemm_op)));
+  for (auto num_split : {1, 4, 16, 64}) {
+    std::vector<std::unique_ptr<DeviceGemm>> instances{};
+    // FIXME: only supports fp8_fp16_fp16_row_row_row and fp16_fp8_fp16_row_row_row now.
+    if constexpr (std::is_same_v<CKTA, ck::f8_t> && std::is_same_v<CKTB, ck::half_t> && std::is_same_v<CKTC, ck::half_t>) {
+      add_device_gemm_xdl_splitk_f8_f16_f16_mk_kn_mn_instances(instances);
+    } else if constexpr (std::is_same_v<CKTA, ck::half_t> && std::is_same_v<CKTB, ck::f8_t> && std::is_same_v<CKTC, ck::half_t>) {
+      add_device_gemm_xdl_splitk_f16_f8_f16_mk_kn_mn_instances(instances);
+    } else {
+      // static_assert(false, "no instances");
+    }
+    for (auto&& impl : instances) {
+      auto type_string = impl->GetTypeString() + "_SplitK" + std::to_string(num_split);
+      auto invoker = impl->MakeInvokerPointer();
+      auto ck_gemm_op = [num_split, impl = std::move(impl), invoker = std::move(invoker)](const FP8GemmParams<TA, TB, TC>* params) -> Status {
+        OpA op_a = CreateOp<CKTA>(params->scale_a, params->scale_a_dev);
+        OpB op_b = CreateOp<CKTB>(params->scale_b, params->scale_b_dev);
+        OpC op_c = CreateOp<CKTC>(params->scale_c, params->scale_c_dev);
+
+        auto arg = impl->MakeArgumentPointer(params->a, params->b, params->c,
+                                             params->m, params->n, params->k,
+                                             params->lda, params->ldb, params->ldc,
+                                             op_a, op_b, op_c, num_split);
+        TUNABLE_OP_RETURN_UNSUPPORTED_ARGUMENT_IF(!impl->IsSupportedArgument(arg.get()),
+                                                  impl->GetTypeString(), " does not support ", params->Signature());
+        invoker->Run(arg.get(), StreamConfig{params->StreamHandle()});
+        return Status::OK();
+      };
+      ret.emplace_back(std::make_pair(std::move(type_string), std::move(ck_gemm_op)));
+    }
   }
   return ret;
 }

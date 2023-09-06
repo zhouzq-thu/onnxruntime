@@ -30,7 +30,7 @@ struct CKDataTypeAdaptor<BFloat16> {
 };
 
 template <>
-struct CKDataTypeAdaptor<Float8E4M3FN> {
+struct CKDataTypeAdaptor<Float8E4M3FNUZ> {
   using type = ck::f8_t;
 };
 

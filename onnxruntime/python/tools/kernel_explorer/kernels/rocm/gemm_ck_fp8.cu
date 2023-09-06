@@ -47,17 +47,17 @@ class CKFP8Gemm : public IKernelExplorer {
     params_.k = k;
     params_.a = static_cast<TA*>(a.ptr());
     params_.lda = lda;
-    if constexpr (std::is_same_v<TA, Float8E4M3FN>) {
+    if constexpr (std::is_same_v<TA, Float8E4M3FNUZ>) {
       params_.scale_a = scale_a;
     }
     params_.b = static_cast<TB*>(b.ptr());
     params_.ldb = ldb;
-    if constexpr (std::is_same_v<TB, Float8E4M3FN>) {
+    if constexpr (std::is_same_v<TB, Float8E4M3FNUZ>) {
       params_.scale_b = scale_b;
     }
     params_.c = static_cast<TC*>(c.ptr());
     params_.ldc = ldc;
-    if constexpr (std::is_same_v<TC, Float8E4M3FN>) {
+    if constexpr (std::is_same_v<TC, Float8E4M3FNUZ>) {
       params_.scale_c = scale_c;
     }
 
@@ -113,8 +113,8 @@ class CKFP8Gemm : public IKernelExplorer {
                     DeviceArray&, int64_t, float>());
 
 KE_REGISTER(m) {
-  REGISTER_CKFP8GEMM("CKFP8Gemm_f8_f16_f16_NN", Float8E4M3FN, half, half, Row, Row);
-  REGISTER_CKFP8GEMM("CKFP8Gemm_f16_f8_f16_NN", half, Float8E4M3FN, half, Row, Row);
+  REGISTER_CKFP8GEMM("CKFP8Gemm_f8_half_half_NN", Float8E4M3FNUZ, half, half, Row, Row);
+  REGISTER_CKFP8GEMM("CKFP8Gemm_half_f8_half_NN", half, Float8E4M3FNUZ, half, Row, Row);
 }
 #endif  // USE_COMPOSABLE_KERNEL
 

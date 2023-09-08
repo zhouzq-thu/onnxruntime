@@ -37,7 +37,7 @@ parameters:
 jobs:
   - job: Build_QNN_EP
     pool: onnxruntime-qnn-ubuntu-2004-cpu
-    timeoutInMinutes: 60
+    timeoutInMinutes: 120
     workspace:
       clean: all
 
@@ -86,7 +86,7 @@ jobs:
         inputs:
           script: |
             ./build/Release/onnx_test_runner -e qnn \
-              -v -j 1 -c 1 -i "backend_path|$(QNN_SDK_ROOT)/lib/x86_64-linux-clang/libQnnCpu.so" \
+              -j 1 -c 1 -i "backend_path|$(QNN_SDK_ROOT)/lib/x86_64-linux-clang/libQnnCpu.so" \
               cmake/external/onnx/onnx/backend/test/data/node
 
       - task: CmdLine@2
@@ -94,7 +94,7 @@ jobs:
         inputs:
           script: |
             ./build/Release/onnx_test_runner -e qnn \
-              -v -j 1 -c 1 -i "backend_path|$(QNN_SDK_ROOT)/lib/x86_64-linux-clang/libQnnCpu.so" \
+              -j 1 -c 1 -i "backend_path|$(QNN_SDK_ROOT)/lib/x86_64-linux-clang/libQnnCpu.so" \
               /data/float32_models
 
       - task: CmdLine@2
@@ -102,7 +102,7 @@ jobs:
         inputs:
           script: |
             ./build/Release/onnx_test_runner -e qnn \
-              -v -j 1 -c 1 -i "backend_path|$(QNN_SDK_ROOT)/lib/x86_64-linux-clang/libQnnHtp.so" \
+              -j 1 -c 1 -i "backend_path|$(QNN_SDK_ROOT)/lib/x86_64-linux-clang/libQnnHtp.so" \
               /data/qdq_models
 
       - task: CmdLine@2

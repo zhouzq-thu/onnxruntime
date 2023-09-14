@@ -63,7 +63,7 @@ def _test_gemm(func, dta: str, dtb: str, dtc: str, transa: bool, transb: bool, m
     ref_c = matmul((a / scale_a).astype("float64"), (b / scale_b).astype("float64"), transa, transb)
     scale_c = float("nan")
 
-    bound = 0.1  # FIXME: how to derive the bound for fp8?
+    bound = 0.01  # FIXME: how to derive the bound for fp8?
 
     my_c = np.ones((m, n), dtype=dtc)
     dev_a = create_device_array(a)
@@ -107,7 +107,8 @@ all_transabs = [(False, False)]
 
 @pytest.mark.skipif(not ke.is_composable_kernel_available(), reason="ck is not enabled")
 @pytest.mark.parametrize("m, n, k", get_gemm_basic_sizes(full=False) + get_gemm_bert_sizes(full=False))
-# @pytest.mark.parametrize("m, n, k", [(16, 16, 16)])
+# @pytest.mark.parametrize("m, n, k", [(1, 8192, 28672)])
+# @pytest.mark.parametrize("m, n, k", [(64, 256, 16)])
 @pytest.mark.parametrize("transa, transb", all_transabs)
 @pytest.mark.parametrize("dta, dtb, dtc", dtypes)
 def test_ck_gemm_bert_cases(dta, dtb, dtc, transa, transb, m, n, k):

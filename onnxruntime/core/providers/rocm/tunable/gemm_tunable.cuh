@@ -106,6 +106,10 @@ class F8GemmTunableOp : public TunableOp<FP8GemmParams<TA, TB, TC>> {
       ORT_UNUSED_PARAMETER(_);
       this->RegisterOp(std::move(op));
     }
+    for (auto&& [_, op] : GetHgyCKF8SplitKGemmTypeStringAndOps<TA, TB, TC, ALayout, BLayout>()) {
+      ORT_UNUSED_PARAMETER(_);
+      this->RegisterOp(std::move(op));
+    }
 #else
     static_assert(false, "CK is required to support fp8 computing")
 #endif

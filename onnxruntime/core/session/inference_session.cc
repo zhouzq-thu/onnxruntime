@@ -1006,8 +1006,8 @@ common::Status InferenceSession::TransformGraph(onnxruntime::Graph& graph, bool 
                                                       std::move(cpu_allocator), debug_graph_fn));
 
       if (modified) {
-        ORT_RETURN_IF_ERROR_SESSIONID_(
-            graph_transformer_mgr_.ApplyTransformers(graph_to_transform, TransformerLevel::Level1, *session_logger_));
+        // ORT_RETURN_IF_ERROR_SESSIONID_(
+        //     graph_transformer_mgr_.ApplyTransformers(graph_to_transform, TransformerLevel::Level1, *session_logger_));
 
         // debug the graph after the L1 transformers have run against any layout transformation changes.
         // this is prior to GraphPartitioner::GetCapabilityForEP calling IExecutionProvider::GetCapability the second

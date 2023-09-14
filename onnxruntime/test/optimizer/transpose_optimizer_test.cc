@@ -4549,6 +4549,8 @@ TEST(TransposeOptimizerTests, QnnTransposeReshapeQDQ) {
   auto internal_testing_ep = std::make_unique<InternalTestingEP>(empty_set, empty_set, DataLayout::NHWC);
   internal_testing_ep->EnableStaticKernels().TakeAllNodes();
 
+  ASSERT_STATUS_OK(so.config_options.AddConfigEntry(kDebugLayoutTransformation, "1"));
+
   InferenceSessionWrapper session{so, GetEnvironment()};
   ASSERT_STATUS_OK(session.RegisterExecutionProvider(std::move(internal_testing_ep)));
   ASSERT_STATUS_OK(session.Load(model_uri));

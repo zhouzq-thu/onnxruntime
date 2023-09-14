@@ -38,6 +38,12 @@ struct HandlerInfo {
   bool transposes_outputs = true;
 };
 
+struct InitializerModification {
+  std::optional<std::vector<int64_t>> transpose_perms;  // TransposeInput change
+  std::optional<std::vector<int64_t>> reshape;  // UnsqueezeInput change
+  std::string_view new_name;
+};
+
 struct OptimizerCtx {
   int64_t opset;
   api::GraphRef& graph;
@@ -48,6 +54,8 @@ struct OptimizerCtx {
   // Handlers for ops that are not in the ONNX opset, or for ONNX ops where special handling is required.
   // If a handler is not found in this map, the default handlers will be used.
   const HandlerMap& extended_handlers;
+
+  std::unordered_map<std::string_view, InitializerModification> shared_initializer_changes;
 };
 
 /// <summary>

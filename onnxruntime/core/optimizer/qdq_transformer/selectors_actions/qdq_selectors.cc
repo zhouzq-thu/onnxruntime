@@ -44,6 +44,21 @@ std::vector<const Node*> FindQDQNodes(const GraphViewer& graph_viewer, const Nod
 }
 }  // namespace
 
+bool NodeGroupSelector::IsTensorProtoTypeAllowed(int32_t data_type) const {
+  switch (data_type) {
+    case ONNX_NAMESPACE::TensorProto_DataType::TensorProto_DataType_UINT8:
+      return IsQuantTypeEnabled(QuantTypes::kUInt8);
+    case ONNX_NAMESPACE::TensorProto_DataType::TensorProto_DataType_INT8:
+      return IsQuantTypeEnabled(QuantTypes::kInt8);
+    case ONNX_NAMESPACE::TensorProto_DataType::TensorProto_DataType_UINT16:
+      return IsQuantTypeEnabled(QuantTypes::kUInt16);
+    case ONNX_NAMESPACE::TensorProto_DataType::TensorProto_DataType_INT16:
+      return IsQuantTypeEnabled(QuantTypes::kInt16);
+    default:
+      return false;
+  }
+}
+
 bool NodeGroupSelector::CheckQDQNodes(const GraphViewer& graph_viewer, const Node& node,
                                       const std::vector<const Node*>& dq_nodes,
                                       const std::vector<const Node*>& q_nodes,
@@ -123,7 +138,7 @@ bool DropQDQNodeGroupSelector::Check(const GraphViewer& graph_viewer,
     return false;
   }
 
-  if (!allow_16bit_ && Is16BitIntType(dt_input)) {
+  if (!IsTensorProtoTypeAllowed(dt_input)) {
     return false;
   }
 
@@ -155,8 +170,7 @@ bool DropDQNodeGroupSelector::Check(const GraphViewer& graph_viewer,
   const Node& dq_node = *dq_nodes.front();
   const int32_t dt_input = dq_node.InputDefs()[0]->TypeAsProto()->tensor_type().elem_type();
 
-  // 16-bit int types must be explicitly allowed.
-  if (!allow_16bit_ && Is16BitIntType(dt_input)) {
+  if (!IsTensorProtoTypeAllowed(dt_input)) {
     return false;
   }
 
@@ -181,8 +195,7 @@ bool UnaryNodeGroupSelector::Check(const GraphViewer& graph_viewer, const Node& 
     return false;
   }
 
-  // 16-bit int types must be explicitly allowed.
-  if (!allow_16bit_ && Is16BitIntType(dt_input)) {
+  if (!IsTensorProtoTypeAllowed(dt_input)) {
     return false;
   }
 
@@ -206,8 +219,7 @@ bool BinaryNodeGroupSelector::Check(const GraphViewer& graph_viewer,
     return false;
   }
 
-  // 16-bit int types must be explicitly allowed.
-  if (!allow_16bit_ && Is16BitIntType(dt_input_1)) {
+  if (!IsTensorProtoTypeAllowed(dt_input_1)) {
     return false;
   }
 
@@ -241,8 +253,7 @@ bool VariadicNodeGroupSelector::Check(const GraphViewer& graph_viewer,
     return false;
   }
 
-  // 16-bit int types must be explicitly allowed.
-  if (!allow_16bit_ && Is16BitIntType(dt_input)) {
+  if (!IsTensorProtoTypeAllowed(dt_input)) {
     return false;
   }
 
@@ -273,10 +284,22 @@ bool ConvNodeGroupSelector::Check(const GraphViewer& graph_viewer,
     return false;
   }
 
+  if (!IsTensorProtoTypeAllowed(dt_input)) {
+    return false;
+  }
+
+  // If the input is a signed 8-bit integer, then the weight must also be int8_t.
   if (dt_input == ONNX_NAMESPACE::TensorProto_DataType::TensorProto_DataType_INT8) {
-    if (!int8_allowed_ || dt_weight != dt_input) {
+    if (dt_weight != dt_input) {
       return false;
     }
+  }
+
+  // 16-bit weights must be explicitly allowed.
+  // Can't just use !IsTensorProtoTypeAllowed(dt_weight) because dt_weight is allowed to be int8_t
+  // even if kInt8 is disabled.
+  if (Is16BitIntType(dt_weight) && !IsTensorProtoTypeAllowed(dt_weight)) {
+    return false;
   }
 
   if (dq_nodes.size() == 3) {  // has bias
@@ -284,11 +307,6 @@ bool ConvNodeGroupSelector::Check(const GraphViewer& graph_viewer,
     if (dt_bias != ONNX_NAMESPACE::TensorProto_DataType::TensorProto_DataType_INT32) {
       return false;
     }
-  }
-
-  // 16-bit int types must be explicitly allowed.
-  if (!allow_16bit_ && (Is16BitIntType(dt_input) || Is16BitIntType(dt_weight))) {
-    return false;
   }
 
   return true;
@@ -309,14 +327,21 @@ bool MatMulNodeGroupSelector::Check(const GraphViewer& graph_viewer,
   int32_t dt_input = dq_nodes[0]->InputDefs()[0]->TypeAsProto()->tensor_type().elem_type();
   int32_t dt_weight = dq_nodes[1]->InputDefs()[0]->TypeAsProto()->tensor_type().elem_type();
 
+  if (!IsTensorProtoTypeAllowed(dt_input)) {
+    return false;
+  }
+
+  // If the input is a signed 8-bit integer, then the weight must also be int8_t.
   if (dt_input == ONNX_NAMESPACE::TensorProto_DataType::TensorProto_DataType_INT8) {
-    if (!int8_allowed_ || dt_weight != dt_input) {
+    if (dt_weight != dt_input) {
       return false;
     }
   }
 
-  // 16-bit int types must be explicitly allowed.
-  if (!allow_16bit_ && (Is16BitIntType(dt_input) || Is16BitIntType(dt_weight))) {
+  // 16-bit weights must be explicitly allowed.
+  // Can't just use !IsTensorProtoTypeAllowed(dt_weight) because dt_weight is allowed to be int8_t
+  // even if QuantTypes::kInt8 is disabled.
+  if (Is16BitIntType(dt_weight) && !IsTensorProtoTypeAllowed(dt_weight)) {
     return false;
   }
 
@@ -363,8 +388,7 @@ bool GemmNodeGroupSelector::Check(const GraphViewer& graph_viewer,
     }
   }
 
-  // 16-bit int types must be explicitly allowed.
-  if (!allow_16bit_ && (Is16BitIntType(dt_A) || Is16BitIntType(dt_B))) {
+  if (!IsTensorProtoTypeAllowed(dt_A) || !IsTensorProtoTypeAllowed(dt_B)) {
     return false;
   }
 
@@ -401,8 +425,7 @@ bool WhereNodeGroupSelector::Check(const GraphViewer& graph_viewer, const Node& 
     return false;
   }
 
-  // 16-bit int types must be explicitly allowed.
-  if (!allow_16bit_ && Is16BitIntType(dt_input_1)) {
+  if (!IsTensorProtoTypeAllowed(dt_input_1)) {
     return false;
   }
 
@@ -449,8 +472,12 @@ bool BatchNormalizationNodeGroupSelector::Check(const GraphViewer& graph_viewer,
     return false;
   }
 
+  if (!IsTensorProtoTypeAllowed(dt_input)) {
+    return false;
+  }
+
   if (dt_input == ONNX_NAMESPACE::TensorProto_DataType::TensorProto_DataType_INT8) {
-    if (!int8_allowed_ || dt_scale != dt_input) {
+    if (dt_scale != dt_input) {
       return false;
     }
   }

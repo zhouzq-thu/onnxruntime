@@ -36,6 +36,7 @@ RUN dnf clean dbcache
 ADD scripts /tmp/scripts
 RUN cd /tmp/scripts && /tmp/scripts/install_dotnet.sh && /tmp/scripts/install_java.sh && rm -rf /tmp/scripts
 
+RUN pip3 install cmake
 # Build final image from base.
 FROM base as final
 ARG BUILD_USER=onnxruntimedev

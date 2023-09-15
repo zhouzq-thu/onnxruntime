@@ -166,19 +166,11 @@ struct MacScale {
   explicit MacScale(float host_scale_value) : dev_scale_ptr{nullptr}, scale_value{host_scale_value} {}
 
   __forceinline__ __device__ void operator()(ck::half_t& y, const ck::half_t& x) const {
-    // load scale
-    // float scale = nullptr == dev_scale_ptr ? scale_value : *dev_scale_ptr;
-    float scale = scale_value;
+    float scale = nullptr == dev_scale_ptr ? scale_value : *dev_scale_ptr;
 
-    // extract low 8 bits as fp8
-    uint16_t x_uint16 = *reinterpret_cast<const uint16_t*>(&x);
-    uint8_t x_uint8 = static_cast<uint8_t>(x_uint16);
-    ck::f8_t x_f8 = *reinterpret_cast<ck::f8_t*>(&x_uint8);
-
-    // do the conversion and scale
-    float x_actually_converted = ck::type_convert<float>(x_f8);
-    float x_scaled = scale * x_actually_converted;
-    y = ck::type_convert<ck::half_t>(x_scaled);
+    uint8_t x_uint8 = reinterpret_cast<const uchar2&>(x).data[0]; // extract low 8 bits as fp8
+    ck::f8_t x_f8 = reinterpret_cast<ck::f8_t&>(x_uint8);
+    y = scale * fast_type_convert<ck::half_t>(x_f8);
   }
 
   const float* dev_scale_ptr;
@@ -271,7 +263,7 @@ auto GetCKF8SplitKGemmTypeStringAndOps() {
       // static_assert(false, "no instances");
     }
     for (auto&& impl : instances) {
-      auto type_string = impl->GetTypeString() + "_SplitK" + std::to_string(num_split);
+      auto type_string = std::to_string(ret.size()) + "_" + impl->GetTypeString() + "_SplitK" + std::to_string(num_split);
       auto invoker = impl->MakeInvokerPointer();
       auto ck_gemm_op = [num_split, impl = std::move(impl), invoker = std::move(invoker)](const FP8GemmParams<TA, TB, TC>* params) -> Status {
         OpA op_a = CreateOp<CKTA>(params->scale_a, params->scale_a_dev);

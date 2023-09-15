@@ -51,8 +51,6 @@ inline __host__ __device__ ck::half_t fast_type_convert<ck::half_t, ck::f8_t>(ck
   return reinterpret_cast<ck::half_t&>(y);
 }
 
-#define PRINTF(...) if (blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 && threadIdx.x == 0&& threadIdx.y == 0&& threadIdx.z == 0) printf(__VA_ARGS__)
-
 struct Scale {
   explicit Scale(const float* dev_scale_ptr) : dev_scale_ptr{dev_scale_ptr} {}
   explicit Scale(float host_scale_value) : dev_scale_ptr{nullptr}, scale_value{host_scale_value} {}
@@ -72,13 +70,9 @@ struct Scale {
     constexpr const uint32_t exp_compensate = 0x1c001c00;  // for float8_e4m3fnuz
 
     uchar4 x{0, x0, 0, x1};
-    // PRINTF("%x %x %x %x\n", 0, x0, 0, x1);
     uint32_t x_u32 = reinterpret_cast<uint32_t&>(x);
-    // PRINTF("%x\n", x_u32);
     uint32_t exp = (x_u32 & mask) >> 1;
-    // PRINTF("%x\n", exp);
     uint32_t v = (x_u32 & sign_mask) | (exp + exp_compensate);
-    // PRINTF("%x\n", v);
     half2 u = scale * reinterpret_cast<half2&>(v);
     // NOTE: don't use u.x, u.y ...
     y0 = u.data[0];

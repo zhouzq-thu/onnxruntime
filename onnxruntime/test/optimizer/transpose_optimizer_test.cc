@@ -17,6 +17,7 @@
 #include "test/providers/internal_testing/internal_testing_execution_provider.h"
 #include "test/util/include/asserts.h"
 #include "test/util/include/inference_session_wrapper.h"
+#include "test/util/include/test_utils.h"
 
 namespace onnxruntime {
 namespace test {
@@ -4427,9 +4428,9 @@ TEST(TransposeOptimizerTests, RegressionTest_GitHubIssue9671) {
 
   SessionOptions so;
   so.session_logid = "TransposeOptimizerTests.RegressionTest_GitHubIssue9671";
-  InferenceSession session_object{so, GetEnvironment()};
-  ASSERT_STATUS_OK(session_object.Load(model_uri));
-  ASSERT_STATUS_OK(session_object.Initialize());  // optimizers run during initialization
+  InferenceSession session{so, GetEnvironment()};
+  ASSERT_STATUS_OK(session.Load(model_uri));
+  ASSERT_STATUS_OK(session.Initialize());  // optimizers run during initialization
 }
 
 // regression test for a model where the transpose optimizations incorrectly removed a node providing an implicit
@@ -4441,9 +4442,9 @@ TEST(TransposeOptimizerTests, RegressionTest_GitHubIssue10305) {
 
   SessionOptions so;
   so.session_logid = "TransposeOptimizerTests.RegressionTest_GitHubIssue10305";
-  InferenceSession session_object{so, GetEnvironment()};
-  ASSERT_STATUS_OK(session_object.Load(model_uri));
-  ASSERT_STATUS_OK(session_object.Initialize());  // optimizers run during initialization
+  InferenceSession session{so, GetEnvironment()};
+  ASSERT_STATUS_OK(session.Load(model_uri));
+  ASSERT_STATUS_OK(session.Initialize());  // optimizers run during initialization
 }
 
 // regression test for a model with DQ node with per-axis dequantization followed by a Transpose.
@@ -4464,18 +4465,18 @@ TEST(TransposeOptimizerTests, RegressionTest_GitHubIssue12151) {
 
   {
     so.graph_optimization_level = TransformerLevel::Default;  // off
-    InferenceSession session_object{so, GetEnvironment()};
-    ASSERT_STATUS_OK(session_object.Load(model_uri));
-    ASSERT_STATUS_OK(session_object.Initialize());
-    ASSERT_STATUS_OK(session_object.Run(feeds, output_names, &fetches_orig));
+    InferenceSession session{so, GetEnvironment()};
+    ASSERT_STATUS_OK(session.Load(model_uri));
+    ASSERT_STATUS_OK(session.Initialize());
+    ASSERT_STATUS_OK(session.Run(feeds, output_names, &fetches_orig));
   }
 
   {
     so.graph_optimization_level = TransformerLevel::Level1;  // enable transpose optimizer
-    InferenceSession session_object{so, GetEnvironment()};
-    ASSERT_STATUS_OK(session_object.Load(model_uri));
-    ASSERT_STATUS_OK(session_object.Initialize());
-    ASSERT_STATUS_OK(session_object.Run(feeds, output_names, &fetches));
+    InferenceSession session{so, GetEnvironment()};
+    ASSERT_STATUS_OK(session.Load(model_uri));
+    ASSERT_STATUS_OK(session.Initialize());
+    ASSERT_STATUS_OK(session.Run(feeds, output_names, &fetches));
   }
 
   ASSERT_THAT(fetches_orig[0].Get<Tensor>().DataAsSpan<float>(),
@@ -4576,6 +4577,55 @@ TEST(TransposeOptimizerTests, QnnTransposeReshapeQDQ) {
                                                                 << "' was not assigned to the internal testing EP.";
   }
 #endif
+}
+
+// test we re-use the copy of a shared initializer when the transpose/unsqueeze change is the same
+TEST(TransposeOptimizerTests, SharedInitializerHandling) {
+  auto model_uri = ORT_TSTR("testdata/transpose_optimizer_shared_initializers.onnx");
+
+  RandomValueGenerator random{};
+  std::vector<int64_t> input_dims{3, 1, 2};
+  std::vector<float> input_data = random.Gaussian<float>(input_dims, 0.0f, 1.0f);
+
+  OrtValue input;
+  CreateMLValue<float>(TestCPUExecutionProvider()->CreatePreferredAllocators()[0], input_dims, input_data, &input);
+
+  NameMLValMap feeds{{"input0", input}};
+
+  std::vector<std::string> output_names{"output0"};
+  std::vector<OrtValue> fetches_orig;
+  std::vector<OrtValue> fetches;
+
+  SessionOptions so;
+  so.session_logid = "TransposeOptimizerTests.RegressionTest_GitHubIssue12151";
+
+  {
+    so.graph_optimization_level = TransformerLevel::Default;  // off
+    InferenceSession session{so, GetEnvironment()};
+    ASSERT_STATUS_OK(session.Load(model_uri));
+    ASSERT_STATUS_OK(session.Initialize());
+    ASSERT_STATUS_OK(session.Run(feeds, output_names, &fetches_orig));
+  }
+
+  {
+    so.graph_optimization_level = TransformerLevel::Level1;  // enable transpose optimizer
+
+    InferenceSessionWrapper session{so, GetEnvironment()};
+    ASSERT_STATUS_OK(session.FilterEnabledOptimizers({"ConstantFolding",
+                                                      "CommonSubexpressionElimination",
+                                                      "ConstantSharing"}));
+    ASSERT_STATUS_OK(session.Load(model_uri));
+    ASSERT_STATUS_OK(session.Initialize());
+
+    const auto& graph = session.GetGraph();
+    std::map<std::string, int> op_to_count = CountOpsInGraph(graph);
+    ASSERT_EQ(op_to_count["Transpose"], 0) << "All layout transform Transpose ops should have been removed";
+
+    ASSERT_STATUS_OK(session.Run(feeds, output_names, &fetches));
+  }
+
+  ASSERT_THAT(fetches_orig[0].Get<Tensor>().DataAsSpan<float>(),
+              testing::ContainerEq(fetches[0].Get<Tensor>().DataAsSpan<float>()));
 }
 }  // namespace test
 }  // namespace onnxruntime

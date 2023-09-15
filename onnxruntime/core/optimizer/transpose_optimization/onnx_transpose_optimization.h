@@ -39,9 +39,12 @@ struct HandlerInfo {
 };
 
 struct InitializerModification {
-  std::optional<std::vector<int64_t>> transpose_perms;  // TransposeInput change
-  std::optional<std::vector<int64_t>> reshape;  // UnsqueezeInput change
+  InitializerModification(std::string_view name, const std::vector<int64_t>& perms, const std::vector<int64_t>& shape)
+      : new_name(name), transpose_perms(perms), new_shape(shape) {}
+
   std::string_view new_name;
+  std::optional<std::vector<int64_t>> transpose_perms;  // TransposeInput change
+  std::optional<std::vector<int64_t>> new_shape;        // UnsqueezeInput change
 };
 
 struct OptimizerCtx {
@@ -55,7 +58,8 @@ struct OptimizerCtx {
   // If a handler is not found in this map, the default handlers will be used.
   const HandlerMap& extended_handlers;
 
-  std::unordered_map<std::string_view, InitializerModification> shared_initializer_changes;
+  using InitializerModificationMap = std::unordered_map<std::string_view, InitializerModification>;
+  InitializerModificationMap shared_initializer_changes;
 };
 
 /// <summary>

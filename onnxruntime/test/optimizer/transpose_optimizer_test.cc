@@ -4608,7 +4608,7 @@ TEST(TransposeOptimizerTests, SharedInitializerHandling) {
   //}
 
   RandomValueGenerator random{};
-  std::vector<int64_t> input_dims{3, 1, 2};
+  std::vector<int64_t> input_dims{1, 2, 2, 3};
   std::vector<float> input_data = random.Gaussian<float>(input_dims, 0.0f, 1.0f);
 
   OrtValue input;

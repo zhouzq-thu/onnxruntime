@@ -94,6 +94,50 @@ static std::unique_ptr<api::NodeRef> MakeSqueezeOrUnsqueeze(int64_t opset, api::
   return graph.AddNode(op_type, inputs, /*num_outputs*/ 1);
 }
 
+static std::unique_ptr<api::NodeRef> GetConstInitializerBehindDQ(api::GraphRef& graph,
+                                                                 std::string_view input_name) {
+  std::unique_ptr<api::NodeRef> dq_node;
+  auto maybe_dq_node = graph.GetNodeProducingOutput(input_name);
+
+  if (maybe_dq_node && maybe_dq_node->OpType() == "DequantizeLinear") {
+    do {
+      auto dq_input = maybe_dq_node->Inputs()[0];
+      auto dq_constant = graph.GetConstant(dq_input);
+
+      // input to DQ must be a constant initializer
+      if (!dq_constant) {
+        break;
+      }
+
+      // For now keep it simple and don't support per-axis quantization as that would require updating the
+      // scale and zero point values in the DQ node to re-order if transposing or reshape if unsqueezing.
+      // the rank of the `scale` and `zero point` inputs must match so we only need to check `scale`.
+      auto dq_scale = graph.GetConstant(maybe_dq_node->Inputs()[1]);
+      if (!dq_scale || dq_scale->NumElements() != 1) {
+        break;
+      }
+
+      //// need to know all the initializer consumers
+      // auto initializer_consumers = graph.GetValueConsumers(dq_input);
+      // if (!initializer_consumers->comprehensive) {
+      //   break;
+      // }
+
+      // DQ output is only used by the node we're modifying. consumers should be 0 as we've already removed the node
+      // being modified as a consumer. See UnsqueezeInput and TransposeInput where we remove the input prior to
+      // calling this function..
+      auto dq_consumers = graph.GetValueConsumers(input_name);
+      if (!dq_consumers->comprehensive || dq_consumers->nodes.size() != 0) {
+        break;
+      }
+
+      dq_node = std::move(maybe_dq_node);
+    } while (false);
+  }
+
+  return dq_node;
+}
+
 /// <summary>
 /// check if input_name is being produced by a DQ node from a constant initializer and has only one consumer.
 ///
@@ -109,81 +153,112 @@ static std::unique_ptr<api::NodeRef> MakeSqueezeOrUnsqueeze(int64_t opset, api::
 /// Functor to check if a shared initializer was previously modified in the same way.</param>
 /// <param name="input_name">Input name that is being checked to see if it is the output of a DQ node where the input
 /// was a const initializer.</param>
-/// <param name="was_shared">Set to true if the initializer was originally shared and we made a copy.</param>
+/// <param name="copied_shared_initializer">Set to true if we made a copy.</param>
 /// <returns>DQ node producing input_name if the DQ node has a const initializer as input.</returns>
-static std::unique_ptr<api::NodeRef> GetConstInitializerBehindDQWithOneConsumer(
-    api::GraphRef& graph,
-    const std::function<std::string_view(std::string_view)>& find_previous_modification,
-    std::string_view input_name,
-    bool& was_shared) {
-  std::unique_ptr<api::NodeRef> dq_node;
-  was_shared = false;
-  auto maybe_dq_node = graph.GetNodeProducingOutput(input_name);
-
-  if (maybe_dq_node && maybe_dq_node->OpType() == "DequantizeLinear") {
-    do {
-      auto dq_input = maybe_dq_node->Inputs()[0];
-      auto dq_constant = graph.GetConstant(dq_input);
-
-      // input to DQ must be a constant initializer
-      if (!dq_constant) {
-        break;
-      }
-
-      // For now keep it simple and don't support per-axis quantization as that would require updating the
-      // scale and zero point values in the DQ node to re-order if transposing or reshape if unsqueezing.
-      auto dq_scale = graph.GetConstant(maybe_dq_node->Inputs()[1]);
-      if (!dq_scale || dq_scale->NumElements() != 1) {
-        break;
-      }
-
-      // need to know all the initializer consumers
-      auto initializer_consumers = graph.GetValueConsumers(dq_input);
-      if (!initializer_consumers->comprehensive) {
-        break;
-      }
-
-      // DQ output is only used by the node we're modifying. consumers is 0 as we've already removed the node as a
-      // consumer. See UnsqueezeInput and TransposeInput for more details.
-      auto dq_consumers = graph.GetValueConsumers(input_name);
-      if (!dq_consumers->comprehensive || dq_consumers->nodes.size() != 0) {
-        break;
-      }
-
-      // the initializer may have multiple DQ consumers, most likely from duplicating DQ nodes to ensure each
-      // QDQ node unit is unique. if this is the case we copy to modify, and if we see the same initializer again
-      // we check if we can use the modified copy.
-      auto num_consumers = initializer_consumers->nodes.size();
-
-      // see if this is a shared initializer that we have previously copied and modified in the same way.
-      // the implementer of find_previous_modification does the check on whether the previous and planned
-      // modifications match, and returns the name of the previously modified initializer if it can be used.
-      auto new_initializer = find_previous_modification(input_name);
-      if (!new_initializer.empty()) {
-        // maybe_dq_node is the last consumer and is about to not be, so we can remove the initializer
-        if (num_consumers == 1) {
-          graph.RemoveInitializer(input_name);
-          num_consumers = 0;
-        }
-      } else if (num_consumers > 1) {
-        // copy the initializer and use the copy in this DQ node
-        new_initializer = graph.AddInitializer(dq_constant->DType(), dq_constant->Shape(),
-                                               dq_constant->Data());
-        was_shared = true;
-      } else {
-        // maybe_dq_node is the only consumer so the initializer can be modified directly
-      }
-
-      if (!new_initializer.empty()) {
-        maybe_dq_node->SetInput(0, new_initializer);
-      }
-
-      dq_node = std::move(maybe_dq_node);
-    } while (false);
-  }
-
-  return dq_node;
-}
+// static std::unique_ptr<api::NodeRef> GetConstInitializerBehindDQWithOneConsumer(
+//     api::GraphRef& graph,
+//     std::optional<OptimizerCtx::InitializerModificationMap> initializer_modifications,
+//     const std::function<std::string_view(std::string_view)>& find_previous_modification,
+//     std::string_view input_name,
+//     bool& copied_shared_initializer) {
+//   std::unique_ptr<api::NodeRef> dq_node;
+//   copied_shared_initializer = false;
+//   auto maybe_dq_node = graph.GetNodeProducingOutput(input_name);
+//
+//   if (maybe_dq_node && maybe_dq_node->OpType() == "DequantizeLinear") {
+//     do {
+//       auto dq_input = maybe_dq_node->Inputs()[0];
+//       auto dq_constant = graph.GetConstant(dq_input);
+//
+//       // input to DQ must be a constant initializer
+//       if (!dq_constant) {
+//         break;
+//       }
+//
+//       // For now keep it simple and don't support per-axis quantization as that would require updating the
+//       // scale and zero point values in the DQ node to re-order if transposing or reshape if unsqueezing.
+//       auto dq_scale = graph.GetConstant(maybe_dq_node->Inputs()[1]);
+//       if (!dq_scale || dq_scale->NumElements() != 1) {
+//         break;
+//       }
+//
+//       // need to know all the initializer consumers
+//       auto initializer_consumers = graph.GetValueConsumers(dq_input);
+//       if (!initializer_consumers->comprehensive) {
+//         break;
+//       }
+//
+//       // DQ output is only used by the node we're modifying. consumers is 0 as we've already removed the node as a
+//       // consumer. See UnsqueezeInput and TransposeInput for more details.
+//       auto dq_consumers = graph.GetValueConsumers(input_name);
+//       if (!dq_consumers->comprehensive || dq_consumers->nodes.size() != 0) {
+//         break;
+//       }
+//
+//       // the initializer may have multiple DQ consumers, most likely from duplicating DQ nodes to ensure each
+//       // QDQ node unit is unique. if this is the case we copy to modify, and if we see the same initializer again
+//       // we check if we can use the modified copy.
+//       // ensure that it's only connected to DQ nodes to simplify logic in UnsqueezeInput/TransposeInput. we don't
+//       // expect a model to have a share initializer used by both DQ and non-DQ nodes and handling that would complicate
+//       // the 'case 1' code.
+//       auto num_consumers = initializer_consumers->nodes.size();
+//       if (num_consumers > 1) {
+//         for (auto& c : initializer_consumers->nodes) {
+//           if (c->OpType() != "DequantizeLinear") {
+//             break;
+//           }
+//         }
+//       }
+//
+//       // see if this is a shared initializer that we have previously copied and modified in the same way.
+//       // the implementer of find_previous_modification does the check on whether the previous and planned
+//       // modifications match, and returns the name of the previously modified initializer if it can be used.
+//       auto new_initializer = find_previous_modification(input_name);
+//       if (!new_initializer.empty()) {
+//         // maybe_dq_node is the last consumer and is about to not be, so we can remove the initializer
+//         if (num_consumers == 1) {
+//           graph.RemoveInitializer(input_name);
+//           num_consumers = 0;
+//         }
+//       } else if (num_consumers > 1) {
+//         // copy the initializer and use the copy in this DQ node
+//         new_initializer = graph.AddInitializer(dq_constant->DType(), dq_constant->Shape(),
+//                                                dq_constant->Data());
+//         copied_shared_initializer = true;
+//       } else {
+//         // maybe_dq_node is the only consumer so the initializer can be modified directly (in theory)
+//         // however, if it is the copy of a shared initializer that has been modified we need to copy it again
+//         // as the tracking is only for one change from the original value.
+//         // e.g. transpose of a broadcast weight adds an Unsqueeze in UnsqueezeInput to handle the broadcast and
+//         // a Transpose in TransposeInput to handle the transpose.
+//         // TODO: Is it possible to track 2 changes or is that more pain than it's worth? Given that would involve
+//         // knowing both UnsqueezeInput and TransposeInput are modifying the same initializer ahead of that happening
+//         // it's unlikely there's a good way to do it.
+//         // Expected we end up with potentially 3 copies until we process all usages at which point the
+//         // RemoveInitializer above should get us back to 1. If the weight is large that will be sub-optimal for peak
+//         // memory usage.
+//         if (initializer_modifications) {
+//           for (const auto& entry : *initializer_modifications) {
+//             if (entry.second.new_name == input_name) {
+//               new_initializer = graph.AddInitializer(dq_constant->DType(), dq_constant->Shape(),
+//                                                      dq_constant->Data());
+//               copied_shared_initializer = true;
+//               break;
+//             }
+//           }
+//         }
+//       }
+//
+//       if (!new_initializer.empty()) {
+//         maybe_dq_node->SetInput(0, new_initializer);
+//       }
+//
+//       dq_node = std::move(maybe_dq_node);
+//     } while (false);
+//   }
+//
+//   return dq_node;
+// }
 
 // Returns whether perm is a valid permutation (contains each value from 0 to perm.size() - 1 exactly once)
 static bool IsValidPerm(const std::vector<int64_t>& perm) {
@@ -454,97 +529,97 @@ static void UnsqueezeInput(OptimizerCtx& ctx, api::NodeRef& node, size_t i, cons
   node.SetInput(i, "");
 
   std::unique_ptr<api::TensorRef> constant = ctx.graph.GetLocalConstant(input);
-  auto consumers = ctx.graph.GetValueConsumers(input);
+
+  // allow for a constant initializer coming via a DQ node
+  std::unique_ptr<api::NodeRef> dq_node;
+  std::string_view constant_dq_input;
+
+  if (!constant) {
+    // allow looking past a DQ node for a constant initializer. essentially we pretend the DQ node doesn't exist
+    // when making changes to the data and dealing with multiple consumers. this means we can directly update the
+    // initializer, and any additional nodes are prior to the DQ so we don't break up any QDQ node units.
+    // assumption: we already did model fixups to ensure a DQ node only has one consumer.
+    dq_node = GetConstInitializerBehindDQ(ctx.graph, input);
+    if (dq_node) {
+      constant_dq_input = dq_node->Inputs()[0];
+      constant = ctx.graph.GetLocalConstant(constant_dq_input);
+      assert(constant);  // GetConstInitializerBehindDQ should only return the name of a constant initializer
+
+      // remove the DQ node as a consumer of the initializer while we modify things
+      dq_node->SetInput(0, "");
+    }
+  }
+
+  auto value_to_modify = dq_node ? constant_dq_input : input;
+  auto consumers = ctx.graph.GetValueConsumers(value_to_modify);
 
   // Case 1: input is a constant with a known list of consumer nodes
   if (constant != nullptr && consumers->comprehensive) {
-    // We will reshape the initializer. If there are other existing consumers, still reshape it but add Squeeze nodes
+    // We will reshape the initializer. If there are existing consumers, still reshape it but add Squeeze nodes
     // to counteract its effect. If they later Unsqueeze the same input, the Squeeze nodes will simply be deleted
     // (see Case 2).
-    // NOTE: We already removed this node as a consumer above so it will not appear in consumers->nodes.
-    std::string_view new_input;
-    auto new_shape = UnsqueezeShape(constant->Shape(), axes);
-    auto num_consumers = consumers->nodes.size();
-
-    std::cout << "UnsqueezeInput: " << input << ": ";
-
-    // see if we've modified this initializer before, and if so whether we're going to do the same thing here.
-    // we check this even if there are 0 consumers as the current node no longer counts.
-    // e.g. shared by 2, we copied for the first one and have an entry due to that, leaving 1 consumer of the original.
-    // we removed that consumer above so now have 0 consumers but can still potentially use the copy.
-    // auto it = ctx.shared_initializer_changes.find(input);
-    // if (it != ctx.shared_initializer_changes.cend()) {
-    //  auto& modification = it->second;
-    //  if (modification.new_shape && *modification.new_shape == new_shape) {
-    //    std::cout << "re-use previous copy " << modification.new_name << ", ";
-
-    //    // we've already transposed this initializer, so use the new name.
-    //    // first remove the original initializer if it has no consumers
-    //    if (num_consumers == 0) {
-    //      ctx.graph.RemoveInitializer(input);
-    //    }
-
-    //    // we've already unsqueezed this initializer, so just use the new name
-    //    input = modification.new_name;
-    //    num_consumers = 0;  // set to zero to skip the potential copy
-    //  }
-    //}
-
-    if (num_consumers > 0) {
-      new_input = ctx.graph.AddInitializer(constant->DType(), constant->Shape(), constant->Data());
-      constant = ctx.graph.GetLocalConstant(new_input);
-      ctx.shared_initializer_changes.insert({input, InitializerModification{new_input, {}, new_shape}});
-      input = new_input;
-      std::cout << "copied to " << new_input << ", ";
-    } else if (/* name is in the shared initializer changes as a target */ true) {
-        // need to copy and add new entry to shared initializer changes
+    if (consumers->nodes.size() > 0) {
+      auto squeeze_ptr = MakeSqueezeOrUnsqueeze(ctx.opset, ctx.graph, "Squeeze", value_to_modify, axes);
+      api::NodeRef& squeeze = *squeeze_ptr;
+      std::string_view sq_out = squeeze.Outputs()[0];
+      ctx.graph.CopyValueInfo(value_to_modify, sq_out);
+      ReplaceValueReferences(consumers->nodes, value_to_modify, sq_out);
     }
 
-    ctx.graph.ReshapeInitializer(input, new_shape);
-    node.SetInput(i, input);
+    auto new_shape = UnsqueezeShape(constant->Shape(), axes);
+    ctx.graph.ReshapeInitializer(value_to_modify, new_shape);
 
-    std::cout << "using " << input << "\n";
+    if (dq_node) {
+      // update the shape of the DQ node
+      // ctx.graph.GetValueInfo(dq_node->Outputs()[0])->SetShape(&new_shape);
+      dq_node->SetInput(0, constant_dq_input);
 
+      auto cur_shape = *ctx.graph.GetValueInfo(dq_node->Outputs()[0])->Shape();
+      if (new_shape != cur_shape)
+        ctx.graph.GetValueInfo(dq_node->Outputs()[0])->SetShape(&new_shape);
+    }
+
+    node.SetInput(i, input);  // we use `input` here to re-instate the original connection
     return;
   }
 
   // Case 1a: input is provided by a constant that is only connected to this node via a DQ. as we're not modifying the
   //          data values we can update the initializer directly.
-  {
-    std::vector<int64_t> new_shape;
-    const auto find_previous_modification =
-        [&ctx, &axes, &new_shape](std::string_view input_name) -> std::string_view {
-      auto it = ctx.shared_initializer_changes.find(input_name);
-      if (it != ctx.shared_initializer_changes.cend() && it->second.new_shape && !it->second.transpose_perms) {
-        auto constant = ctx.graph.GetLocalConstant(input_name);
-        auto tmp_new_shape = UnsqueezeShape(constant->Shape(), axes);
-        if (*it->second.new_shape == tmp_new_shape) {
-          new_shape = tmp_new_shape;
-          return it->second.new_name;
-        }
-      }
+  //{
+  //  std::vector<int64_t> new_shape;
+  //  const auto find_previous_modification =
+  //      [&ctx, &axes, &new_shape](std::string_view input_name) -> std::string_view {
+  //    auto it = ctx.shared_initializer_changes.find(input_name);
+  //    if (it != ctx.shared_initializer_changes.cend() && it->second.new_shape && !it->second.transpose_perms) {
+  //      auto constant = ctx.graph.GetLocalConstant(input_name);
+  //      auto tmp_new_shape = UnsqueezeShape(constant->Shape(), axes);
+  //      if (*it->second.new_shape == tmp_new_shape) {
+  //        new_shape = tmp_new_shape;
+  //        return it->second.new_name;
+  //      }
+  //    }
 
-      return {};
-    };
+  //    return {};
+  //  };
 
-    auto dq_node = GetConstInitializerBehindDQWithOneConsumer(ctx.graph, find_previous_modification, input);
-    if (dq_node) {
-      // if we found a previously modified shared initializer we already have the new shape
-      // if not, we need to update the initializer
-      if (new_shape.empty()) {
-        auto dq_input_const_initializer_name = dq_node->Inputs()[0];
-        constant = ctx.graph.GetLocalConstant(dq_input_const_initializer_name);
-        new_shape = UnsqueezeShape(constant->Shape(), axes);
-        ctx.graph.ReshapeInitializer(dq_input_const_initializer_name, new_shape);
-      }
+  //  auto dq_node = GetConstInitializerBehindDQWithOneConsumer(ctx, find_previous_modification, input);
+  //  if (dq_node) {
+  //    // if we found a previously modified shared initializer we already have the new shape
+  //    // if not, we need to update the initializer
+  //    if (new_shape.empty()) {
+  //      auto dq_input_const_initializer_name = dq_node->Inputs()[0];
+  //      constant = ctx.graph.GetLocalConstant(dq_input_const_initializer_name);
+  //      new_shape = UnsqueezeShape(constant->Shape(), axes);
+  //      ctx.graph.ReshapeInitializer(dq_input_const_initializer_name, new_shape);
+  //    }
 
-      // need to update the shape of the DQ output as well
-      ctx.graph.GetValueInfo(dq_node->Outputs()[0])->SetShape(&new_shape);
+  //    // need to update the shape of the DQ output as well
+  //    ctx.graph.GetValueInfo(dq_node->Outputs()[0])->SetShape(&new_shape);
 
-      node.SetInput(i, input);  // re-instate original input
-      return;
-    }
-  }
+  //    node.SetInput(i, input);  // re-instate original input
+  //    return;
+  //  }
+  //}
 
   // Case 2: input is a Squeeze node with matching axes
   std::unique_ptr<api::NodeRef> inp_node = ctx.graph.GetNodeProducingOutput(input);
@@ -619,7 +694,7 @@ static void Permute1DConstant(api::GraphRef& graph, api::NodeRef& node, api::Ten
 // Replaces ith input to node with transposed value. Might create a new Transpose node, find an existing one,
 // or transpose an initializer.
 static void TransposeInputImpl(api::GraphRef& graph,
-                               std::optional<OptimizerCtx::InitializerModificationMap> initializer_modifications,
+                               std::optional<OptimizerCtx::InitializerModificationMap> /*initializer_modifications*/,
                                api::NodeRef& node, size_t i, const std::vector<int64_t>& perm,
                                const std::vector<int64_t>& perm_inv) {
   std::string_view input = node.Inputs()[i];
@@ -629,7 +704,29 @@ static void TransposeInputImpl(api::GraphRef& graph,
 
   // Only local constants are editable
   std::unique_ptr<api::TensorRef> constant = graph.GetLocalConstant(input);
-  auto consumers = graph.GetValueConsumers(input);
+
+  // allow for a constant initializer coming via a DQ node
+  std::unique_ptr<api::NodeRef> dq_node;
+  std::string_view constant_dq_input;
+
+  if (!constant) {
+    // allow looking past a DQ node for a constant initializer. essentially we pretend the DQ node doesn't exist
+    // when making changes to the data and dealing with multiple consumers. this means we can directly update the
+    // initializer, and any additional nodes are prior to the DQ so we don't break up any QDQ node units.
+    // assumption: we already did model fixups to ensure a DQ node only has one consumer.
+    dq_node = GetConstInitializerBehindDQ(graph, input);
+    if (dq_node) {
+      constant_dq_input = dq_node->Inputs()[0];
+      constant = graph.GetLocalConstant(constant_dq_input);
+      assert(constant);  // GetConstInitializerBehindDQ should only return the name of a constant initializer
+
+      // remove the DQ node as a consumer of the initializer while we modify things
+      dq_node->SetInput(0, "");
+    }
+  }
+
+  auto value_to_modify = dq_node ? constant_dq_input : input;
+  auto consumers = graph.GetValueConsumers(value_to_modify);
 
   // Case 1: input is a constant with a known list of consumer nodes
   if (constant != nullptr && consumers->comprehensive) {
@@ -648,103 +745,80 @@ static void TransposeInputImpl(api::GraphRef& graph,
     //       Added an `assert` so at least we fail if we get an unexpected model instead of creating an invalid one.
     if (constant->Shape().size() == 1 && constant->Shape()[0] == gsl::narrow_cast<int64_t>(perm.size())) {
       assert(consumers->nodes.size() == 0);
-      Permute1DConstant(graph, node, *constant, i, input, perm);
+      Permute1DConstant(graph, node, *constant, i, value_to_modify, perm);
       return;
     }
 
-    std::string_view new_input;
-    auto num_consumers = consumers->nodes.size();
-
-    std::cout << "TransposeInput: " << input << ": ";
-
-    // see if we've modified this initializer before, and if so whether we're going to do the same thing here.
-    // we check this even if there are 0 consumers as the current node no longer counts.
-    // e.g. shared by 2, we copied for the first one and have an entry due to that, leaving 1 consumer of the original.
-    // we removed that consumer above so now have 0 consumers but can still potentially use the copy.
-    if (initializer_modifications) {
-      auto it = initializer_modifications->find(input);
-      if (it != initializer_modifications->cend()) {
-        auto& modification = it->second;
-        if (modification.transpose_perms && *modification.transpose_perms == perm) {
-          std::cout << "re-use previous copy " << modification.new_name << ", ";
-
-          // we've already transposed this initializer, so use the new name.
-          // first remove the original initializer if it has no consumers
-          if (num_consumers == 0) {
-            graph.RemoveInitializer(input);
-          }
-
-          input = modification.new_name;
-          num_consumers = 0;  // set to zero to skip the potential copy below
-        }
-      }
+    if (consumers->nodes.size() > 0) {
+      // Transpose the initializer. If there are existing consumers, add Transpose nodes to them using perm_inv
+      // to counteract the effect. These Transposes will hopefully be optimized out later.
+      auto transpose_inv_ptr = MakeTranspose(graph, value_to_modify, perm_inv);
+      api::NodeRef& transpose_inv = *transpose_inv_ptr;
+      std::string_view transpose_out = transpose_inv.Outputs()[0];
+      graph.CopyValueInfo(value_to_modify, transpose_out);
+      ReplaceValueReferences(consumers->nodes, value_to_modify, transpose_out);
     }
 
-    if (num_consumers > 0) {
-      // copy initializer and modify the copy
-      new_input = graph.AddInitializer(constant->DType(), constant->Shape(), constant->Data());
-      constant = graph.GetLocalConstant(new_input);
-      if (initializer_modifications) {
-        initializer_modifications->insert({input, InitializerModification{new_input, perm, {}}});
-      }
+    graph.TransposeInitializer(value_to_modify, perm);
 
-      input = new_input;
-      std::cout << "copied to " << new_input << ", ";
+    if (dq_node) {
+      // update the shape of the DQ node
+      dq_node->SetInput(0, constant_dq_input);
+      auto new_shape = *graph.GetValueInfo(value_to_modify)->Shape();
+      auto cur_shape = *graph.GetValueInfo(dq_node->Outputs()[0])->Shape();
+      if (new_shape != cur_shape)
+        graph.GetValueInfo(dq_node->Outputs()[0])->SetShape(&new_shape);
     }
 
-    graph.TransposeInitializer(input, perm);
-    node.SetInput(i, input);
-
-    std::cout << "using " << input << "\n";
-
+    node.SetInput(i, input);  // use `input` to re-instate the original connection
     return;
   }
 
   // Case 1a: input is provided by a constant that is only connected to this node via a DQ. as we're not modifying the
   //          data values we can update the initializer directly.
-  {
-    // check if the DQ input was originally a shared initializer that we have copied and modified the same way.
-    // if so, use the copy.
-    std::vector<int64_t> new_shape;
-    const auto find_previous_modification =
-        [&graph, &initializer_modifications, &perm, &new_shape](std::string_view input_name) -> std::string_view {
-      if (initializer_modifications) {
-          // FIXME: need to check if input_name is new_name in an entry. if so it was
-        auto it = initializer_modifications->find(input_name);
-        if (it != initializer_modifications->cend() && it->second.transpose_perms && !it->second.new_shape) {
-          if (*it->second.transpose_perms == perm) {
-            new_shape = graph.GetLocalConstant(it->second.new_name)->Shape();
-            return it->second.new_name;
-          }
-        }
-      }
-      return {};
-    };
+  //{
+  //  // check if the DQ input was originally a shared initializer that we have copied and modified the same way.
+  //  // if so, use the copy.
+  //  std::vector<int64_t> new_shape;
+  //  const auto find_previous_modification =
+  //      [&graph, &initializer_modifications, &perm, &new_shape](std::string_view input_name) -> std::string_view {
+  //    if (initializer_modifications) {
+  //      // FIXME: need to check if input_name is new_name in an entry. if so it was
+  //      auto it = initializer_modifications->find(input_name);
+  //      if (it != initializer_modifications->cend() && it->second.transpose_perms && !it->second.new_shape) {
+  //        if (*it->second.transpose_perms == perm) {
+  //          new_shape = graph.GetLocalConstant(it->second.new_name)->Shape();
+  //          return it->second.new_name;
+  //        }
+  //      }
+  //    }
+  //    return {};
+  //  };
 
-    bool initializer_was_copied = false;
-    auto dq_node = GetConstInitializerBehindDQWithOneConsumer(graph, find_previous_modification, input,
-                                                              initializer_was_copied);
-    if (dq_node) {
-      // if we found a previously modified shared initializer we already have the new shape.
-      // if not we need to update the initializer.
-      if (new_shape.empty()) {
-        auto dq_input_const_initializer_name = dq_node->Inputs()[0];
-        graph.TransposeInitializer(dq_input_const_initializer_name, perm);
-        new_shape = *graph.GetValueInfo(dq_input_const_initializer_name)->Shape();
+  //  bool initializer_was_copied = false;
+  //  auto dq_node = GetConstInitializerBehindDQWithOneConsumer(graph, find_previous_modification, input,
+  //                                                            initializer_was_copied);
+  //  if (dq_node) {
+  //    // if we found a previously modified shared initializer we already have the new shape.
+  //    // if not we need to update the initializer.
+  //    if (new_shape.empty()) {
+  //      auto dq_input_const_initializer_name = dq_node->Inputs()[0];
+  //      graph.TransposeInitializer(dq_input_const_initializer_name, perm);
+  //      new_shape = *graph.GetValueInfo(dq_input_const_initializer_name)->Shape();
 
-        if (initializer_was_copied && initializer_modifications) {
-          initializer_modifications->insert(
-              {input, InitializerModification{dq_input_const_initializer_name, perm, {}}});
-        }
-      }
+  //      if (initializer_was_copied && initializer_modifications) {
+  //        initializer_modifications->insert(
+  //            {input, InitializerModification{dq_input_const_initializer_name, perm, {}}});
+  //      }
+  //    }
 
-      // update DQ node output with new shape
-      graph.GetValueInfo(dq_node->Outputs()[0])->SetShape(&new_shape);
+  //    // update DQ node output with new shape
+  //    graph.GetValueInfo(dq_node->Outputs()[0])->SetShape(&new_shape);
 
-      node.SetInput(i, input);
-      return;
-    }
-  }
+  //    node.SetInput(i, input);
+  //    return;
+  //  }
+  //}
 
   // Case 2: input is a Transpose node
   std::unique_ptr<api::NodeRef> inp_node = graph.GetNodeProducingOutput(input);
@@ -954,7 +1028,7 @@ static int EstimateTransposeValueCost(const api::GraphRef& graph, std::string_vi
     std::optional<std::vector<int64_t>> perm2 = GetPermAttrIfValid(*node);
     if (perm2 != std::nullopt) {
       if (*perm2 == perm_inv && CanLikelyRemoveTranspose(graph, *node, extended_handlers)) {
-        return -EstimateValueRank(graph, input) - 1;  // for testing. need to figure out how to setup a test 
+        return -EstimateValueRank(graph, input) - 1;  // for testing. need to figure out how to setup a test
       } else {
         return 0;
       }
@@ -2278,6 +2352,9 @@ OptimizeResult OptimizeImpl(OptimizerCtx& ctx) {
       }
     }
   }
+
+  // TODO: If we inserted Squeeze/Transpose ops for shared initializers do we need another pass for those to be able to
+  // cancel out?
 
   if (!have_dq) {
     result.graph_modified = changed;

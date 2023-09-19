@@ -935,6 +935,24 @@ TEST_F(QnnHTPBackendTests, BinaryOp_Mul4D_U16) {
                          true);  // Use com.microsoft Q/DQ ops
 }
 
+// Test QDQ Mul with data broadcast
+TEST_F(QnnHTPBackendTests, BinaryOp_MulLargeDataBroadcast) {
+  std::vector<float> input_data = GetFloatDataInRange(-10.0, 10.0f, 5242880);
+  std::vector<float> weight_data(5120, 1);
+  for (float& var : weight_data) {
+    uint16_t w = std::rand() % 2;
+    var = w;
+  }
+  weight_data[100] = 0;
+  weight_data[1000] = 0;
+  RunQDQOpTest<uint8_t>("Mul",
+                        {TestInputDef<float>({5120}, false, weight_data),
+                         TestInputDef<float>({1, 16, 64, 5120}, false, input_data)},
+                        {},
+                        17,
+                        ExpectedEPNodeAssignment::All);
+}
+
 // Test And
 TEST_F(QnnHTPBackendTests, BinaryOp_And4D) {
   RunOpTest<bool>("And",

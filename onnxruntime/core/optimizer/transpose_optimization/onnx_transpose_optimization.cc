@@ -2119,7 +2119,7 @@ std::optional<OptimizerCtx> MakeOptimizerContext(api::GraphRef& graph,
     return std::nullopt;
   }
 
-  OptimizerCtx ctx{*opset, graph, provider_type, cost_check_fn, extended_handlers};
+  OptimizerCtx ctx{*opset, graph, provider_type, cost_check_fn, extended_handlers, {}};
   return ctx;
 }
 

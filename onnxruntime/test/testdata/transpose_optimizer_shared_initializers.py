@@ -43,10 +43,12 @@ def create_model(broadcast_weights: bool):
             helper.make_node("Add", ["input_T", "DQ0"], ["A0"], "A0"),
             helper.make_node("DequantizeLinear", ["bias_quant", "dq_scale1"], ["DQ1"], "DQ1"),
             helper.make_node("Add", ["A0", "DQ1"], ["A1"], "A1"),
-            helper.make_node("Add", ["A1", "bias_fp32"], ["A2"], "A2"),
+            helper.make_node("DequantizeLinear", ["bias_quant", "dq_scale0"], ["DQ2"], "DQ2"),
+            helper.make_node("Add", ["A1", "DQ2"], ["A2"], "A2"),
             helper.make_node("Add", ["A2", "bias_fp32"], ["A3"], "A3"),
+            helper.make_node("Add", ["A3", "bias_fp32"], ["A4"], "A4"),
             # NCHW to NHWC
-            helper.make_node("Transpose", ["A3"], ["output0"], perm=[0, 2, 3, 1]),
+            helper.make_node("Transpose", ["A4"], ["output0"], perm=[0, 2, 3, 1]),
         ],
         outputs=[
             helper.make_tensor_value_info("output0", TensorProto.FLOAT, [1, 2, 2, 3]),

@@ -4582,32 +4582,19 @@ TEST(TransposeOptimizerTests, QnnTransposeReshapeQDQ) {
 #endif
 }
 
-// test we re-use the copy of a shared initializer when the transpose/unsqueeze change is the same
-TEST(TransposeOptimizerTests, SharedInitializerHandling) {
-  auto model_uri = ORT_TSTR("testdata/transpose_optimizer_shared_initializers_broadcast.onnx");
+using namespace onnx_transpose_optimization;
+static CostCheckResult AlwaysPushTranspose(const api::GraphRef& /*graph*/,
+                                           const api::NodeRef& /*node*/,
+                                           const std::vector<int64_t>& /*perm*/,
+                                           const std::unordered_set<std::string>& /*outputs_leading_to_transpose*/) {
+  return onnx_transpose_optimization::CostCheckResult::kPushTranspose;
+}
 
-  // direct test of transformer with override for cost estimate
-  //{
-  //  InferenceSessionWrapper session{SessionOptions{}, GetEnvironment()};
-  //  ASSERT_STATUS_OK(session.Load(model_uri));
+static void CheckSharedInitializerHandling(bool broadcast) {
+  auto model_uri = broadcast ? ORT_TSTR("testdata/transpose_optimizer_shared_initializers_broadcast.onnx")
+                             : ORT_TSTR("testdata/transpose_optimizer_shared_initializers.onnx");
 
-  //  Graph& graph = session.GetMutableGraph();
-  //  CPUAllocator allocator;
-
-  //  auto api_graph = MakeApiGraph(graph, TestCPUExecutionProvider()->CreatePreferredAllocators()[0],
-  //                                /*new_node_ep*/ nullptr);
-  //  using namespace onnx_transpose_optimization;
-  //  OptimizeResult result = Optimize(*api_graph, "", /* default cost check*/ nullptr);
-
-  //  ASSERT_EQ(result.error_msg, std::nullopt);
-  //  ASSERT_TRUE(result.graph_modified);
-
-  //  std::map<std::string, int> op_to_count = CountOpsInGraph(graph);
-  //  EXPECT_EQ(op_to_count["Transpose"], 0);
-
-  //}
-
-  RandomValueGenerator random{};
+  RandomValueGenerator random{123};
   std::vector<int64_t> input_dims{1, 2, 2, 3};
   std::vector<float> input_data = random.Gaussian<float>(input_dims, 0.0f, 1.0f);
 
@@ -4624,33 +4611,66 @@ TEST(TransposeOptimizerTests, SharedInitializerHandling) {
   ASSERT_STATUS_OK(so.config_options.AddConfigEntry(kDebugLayoutTransformation, "1"));
   ASSERT_STATUS_OK(so.config_options.AddConfigEntry(kOrtSessionOptionsDisableQuantQDQ, "1"));
 
+  // get results with no modifications to the model
   {
     so.graph_optimization_level = TransformerLevel::Default;  // off
-    InferenceSession session{so, GetEnvironment()};
+    InferenceSessionWrapper session{so, GetEnvironment()};
     ASSERT_STATUS_OK(session.Load(model_uri));
     ASSERT_STATUS_OK(session.Initialize());
     ASSERT_STATUS_OK(session.Run(feeds, output_names, &fetches_orig));
   }
 
   {
-    so.graph_optimization_level = TransformerLevel::Level1;  // enable transpose optimizer
+    // so.graph_optimization_level = TransformerLevel::Level1;  // enable transpose optimizer
 
     InferenceSessionWrapper session{so, GetEnvironment()};
-    ASSERT_STATUS_OK(session.FilterEnabledOptimizers({"ConstantFolding",
-                                                      "CommonSubexpressionElimination",
-                                                      "ConstantSharing"}));
+    // ASSERT_STATUS_OK(session.FilterEnabledOptimizers({"ConstantFolding",
+    //                                                   "CommonSubexpressionElimination",
+    //                                                   "ConstantSharing"}));
     ASSERT_STATUS_OK(session.Load(model_uri));
-    ASSERT_STATUS_OK(session.Initialize());
 
-    const auto& graph = session.GetGraph();
+    // we call the ONNX transpose optimizer directly as we want to plug in the AlwaysPushTranspose cost check.
+    // this is to simplify the model required to exercise the shared initializer handling.
+    Graph& graph = session.GetMutableGraph();
+    CPUAllocator allocator;
+
+    auto api_graph = MakeApiGraph(graph, TestCPUExecutionProvider()->CreatePreferredAllocators()[0],
+                                  /*new_node_ep*/ nullptr);
+
+    OptimizeResult result = Optimize(*api_graph, "", AlwaysPushTranspose);
+
+    ASSERT_EQ(result.error_msg, std::nullopt);
+    ASSERT_TRUE(result.graph_modified);
+    ASSERT_TRUE(graph.GraphResolveNeeded());
+
     std::map<std::string, int> op_to_count = CountOpsInGraph(graph);
-    ASSERT_EQ(op_to_count["Transpose"], 0) << "All layout transform Transpose ops should have been removed";
+    EXPECT_EQ(op_to_count["Transpose"], 0);
 
+    ASSERT_STATUS_OK(graph.Resolve());
+
+    ASSERT_STATUS_OK(session.Initialize());
     ASSERT_STATUS_OK(session.Run(feeds, output_names, &fetches));
   }
 
-  // ASSERT_THAT(fetches_orig[0].Get<Tensor>().DataAsSpan<float>(),
-  //             testing::ContainerEq(fetches[0].Get<Tensor>().DataAsSpan<float>()));
+  ASSERT_THAT(fetches_orig[0].Get<Tensor>().DataAsSpan<float>(),
+              testing::ContainerEq(fetches[0].Get<Tensor>().DataAsSpan<float>()));
+}
+
+// test we re-use a modified shared initializer wherever possible. model has one initializer that is used by 2 DQ nodes
+// and one initializer that is used by 2 Add nodes. both cases should be handled with the initializer being
+// modified in-place for the first usage, and the Transpose added to the second usage being cancelled out when the
+// Transpose is pushed down.
+TEST(TransposeOptimizerTests, SharedInitializerHandling) {
+  CheckSharedInitializerHandling(/*broadcast*/ false);
+}
+
+// same setup as the above test, however the initializer is broadcast to bring UnsqueezeInput into play.
+// the in-place modification of the initializer for the first usage results in
+//   <initializer> -> Transpose -> Squeeze -> {DQ | Add}
+// the second usage should first attempt to cancel out the Squeeze in UnsqueezeInput, followed by cancelling out
+// the Transpose in TransposeInput.
+TEST(TransposeOptimizerTests, SharedInitializerHandlingBroadcast) {
+  CheckSharedInitializerHandling(/*broadcast*/ true);
 }
 }  // namespace test
 }  // namespace onnxruntime

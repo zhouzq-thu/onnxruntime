@@ -248,14 +248,14 @@ class NodeRef {
   /// <returns>Id</returns>
   virtual int64_t Id() const = 0;
 
-  /// <summary>
-  /// Check if two NodeRef instances point to the same underlying node.
-  /// </summary>
-  /// <param name="other">NodeRef to compare to.</param>
-  /// <returns>True if `other` points to the same node as `this`.</returns>
-  virtual bool operator==(const NodeRef& other) const {
-    return Id() == other.Id();
-  }
+  ///// <summary>
+  ///// Check if two NodeRef instances point to the same underlying node.
+  ///// </summary>
+  ///// <param name="other">NodeRef to compare to.</param>
+  ///// <returns>True if `other` points to the same node as `this`.</returns>
+  // virtual bool operator==(const NodeRef& other) const {
+  //   return Id() == other.Id();
+  // }
 
   virtual ~NodeRef(){};
 };

@@ -431,8 +431,7 @@ int64_t ApiNode::Id() const {
 
 // </ApiNode>
 
-std::optional<int64_t>
-ApiGraph::Opset(std::string_view domain) const {
+std::optional<int64_t> ApiGraph::Opset(std::string_view domain) const {
   const auto& version_map = graph_.DomainToVersionMap();
   auto match = version_map.find(std::string(domain));
   if (match == version_map.end()) {

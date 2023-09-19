@@ -4622,6 +4622,7 @@ TEST(TransposeOptimizerTests, SharedInitializerHandling) {
 
   SessionOptions so;
   ASSERT_STATUS_OK(so.config_options.AddConfigEntry(kDebugLayoutTransformation, "1"));
+  ASSERT_STATUS_OK(so.config_options.AddConfigEntry(kOrtSessionOptionsDisableQuantQDQ, "1"));
 
   {
     so.graph_optimization_level = TransformerLevel::Default;  // off

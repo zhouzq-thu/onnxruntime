@@ -95,7 +95,9 @@ class ApiNode final : public api::NodeRef {
   void ClearAttribute(std::string_view name) override;
   void SetInput(size_t i, std::string_view name) override;
   std::string_view GetExecutionProviderType() const override;
-  virtual int SinceVersion() const override;
+  int SinceVersion() const override;
+  int64_t Id() const override;
+  // bool operator==(const NodeRef& other) const override;
 
  private:
   ORT_DISALLOW_COPY_ASSIGNMENT_AND_MOVE(ApiNode);
@@ -417,9 +419,20 @@ int ApiNode::SinceVersion() const {
   return node_.SinceVersion();
 }
 
+int64_t ApiNode::Id() const {
+  return node_.Index();
+}
+
+// bool ApiNode::operator==(const NodeRef& other) const {
+//   // we only have ApiNode instances so the reinterpret_cast is safe.
+//   // we check the address of the Node instance as a node is guaranteed to have a single instance at the ORT level
+//   return &reinterpret_cast<const ApiNode&>(other).node_ == &node_;
+// }
+
 // </ApiNode>
 
-std::optional<int64_t> ApiGraph::Opset(std::string_view domain) const {
+std::optional<int64_t>
+ApiGraph::Opset(std::string_view domain) const {
   const auto& version_map = graph_.DomainToVersionMap();
   auto match = version_map.find(std::string(domain));
   if (match == version_map.end()) {

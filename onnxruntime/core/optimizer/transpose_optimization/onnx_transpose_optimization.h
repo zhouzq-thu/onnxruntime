@@ -48,6 +48,15 @@ struct InitializerModification {
 };
 
 struct OptimizerCtx {
+  OptimizerCtx(int64_t opset_in, api::GraphRef& graph_in, const std::string provider_type_in,
+               CostCheckFn cost_check_fn_in, const HandlerMap& extended_handlers_in)
+      : opset{opset_in},
+        graph{graph_in},
+        provider_type{provider_type_in},
+        cost_check_fn{cost_check_fn_in},
+        extended_handlers{extended_handlers_in} {
+  }
+
   int64_t opset;
   api::GraphRef& graph;
   const std::string provider_type;
@@ -58,8 +67,17 @@ struct OptimizerCtx {
   // If a handler is not found in this map, the default handlers will be used.
   const HandlerMap& extended_handlers;
 
-  using InitializerModificationMap = std::unordered_map<std::string_view, InitializerModification>;
-  InitializerModificationMap shared_initializer_changes;
+  // using InitializerModificationMap = std::unordered_map<std::string_view, InitializerModification>;
+  // InitializerModificationMap shared_initializer_changes;
+
+  // DQs nodes which had a shared constant initializer as input where we updated the initializer in-place and
+  // inserted a Squeeze and/or Transpose on the other usages. Nodes in this set has the Squeeze/Transpose inserted.
+  // If we attempt to push a Transpose through them we need to look past the DQ node to try and cancel
+  // out the Squeeze/Transpose.
+  std::unordered_set<int64_t> special_cased_dq_nodes;
+
+  OptimizerCtx(const OptimizerCtx&) = delete;
+  OptimizerCtx& operator=(const OptimizerCtx&) = delete;
 };
 
 /// <summary>

@@ -31,6 +31,11 @@ Status TransposeOptimizer::ApplyImpl(Graph& graph, bool& modified, int graph_lev
 
   if (result.graph_modified) {
     modified = true;
+    // ORT_RETURN_IF_ERROR(graph.Resolve());  // TODO: This shouldn't be necessary. temp test to see if needed
+    api_graph = MakeApiGraph(graph, cpu_allocator_, /*new_node_ep*/ nullptr);
+
+    result = onnx_transpose_optimization::Optimize(*api_graph, "", /* default cost check*/ nullptr,
+                                                   OrtExtendedHandlers());
   }
 
   GraphViewer graph_viewer(graph);

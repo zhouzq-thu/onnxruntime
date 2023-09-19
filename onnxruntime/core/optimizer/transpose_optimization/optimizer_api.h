@@ -242,6 +242,21 @@ class NodeRef {
   /// <returns>since version or default value -1</returns>
   virtual int SinceVersion() const = 0;
 
+  /// <summary>
+  /// Get the unique id of the node. Value is arbitrary.
+  /// </summary>
+  /// <returns>Id</returns>
+  virtual int64_t Id() const = 0;
+
+  /// <summary>
+  /// Check if two NodeRef instances point to the same underlying node.
+  /// </summary>
+  /// <param name="other">NodeRef to compare to.</param>
+  /// <returns>True if `other` points to the same node as `this`.</returns>
+  virtual bool operator==(const NodeRef& other) const {
+    return Id() == other.Id();
+  }
+
   virtual ~NodeRef(){};
 };
 

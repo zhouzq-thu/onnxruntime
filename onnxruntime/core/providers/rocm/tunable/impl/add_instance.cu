@@ -45,6 +45,21 @@ void add_device_gemm_xdl_splitk_f16_f8_f16_mk_kn_mn_instances(
   add_device_gemm_xdl_splitk_f16_f8_f16_mk_kn_mn_instances_derived(instances);
 }
 
+void add_device_gemm_xdl_splitk_f8_f16_f16_mk_kn_mn_instances_original(
+    std::vector<std::unique_ptr<ck::tensor_operation::device::DeviceGemmSplitK<
+        Row, Row, Row, F8, F16, F16, Scale, PassThrough, PassThrough>>>& instances);
+
+void add_device_gemm_xdl_splitk_f8_f16_f16_mk_kn_mn_instances_derived(
+    std::vector<std::unique_ptr<ck::tensor_operation::device::DeviceGemmSplitK<
+        Row, Row, Row, F8, F16, F16, Scale, PassThrough, PassThrough>>>& instances);
+
+void add_device_gemm_xdl_splitk_f8_f16_f16_mk_kn_mn_instances(
+    std::vector<std::unique_ptr<ck::tensor_operation::device::DeviceGemmSplitK<
+        Row, Row, Row, F8, F16, F16, Scale, PassThrough, PassThrough>>>& instances) {
+  add_device_gemm_xdl_splitk_f8_f16_f16_mk_kn_mn_instances_original(instances);
+  add_device_gemm_xdl_splitk_f8_f16_f16_mk_kn_mn_instances_derived(instances);
+}
+
 }  // namespace internal
 }  // namespace blas
 }  // namespace tunable

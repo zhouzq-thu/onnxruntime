@@ -1694,12 +1694,12 @@ if (onnxruntime_USE_ROCM)
       # are extremely slow to compile. Instead, we only link all gemm related objects. See the following directory on
       # updating.
       # https://github.com/ROCmSoftwarePlatform/composable_kernel/tree/develop/library/src/tensor_operation_instance/gpu
-      # device_gemm_instance
-      # device_gemm_add_fastgelu_instance
-      # device_gemm_fastgelu_instance
-      # device_gemm_splitk_instance
-      # device_gemm_streamk_instance
-      # device_batched_gemm_instance
+      device_gemm_instance
+      device_gemm_add_fastgelu_instance
+      device_gemm_fastgelu_instance
+      device_gemm_splitk_instance
+      device_gemm_streamk_instance
+      device_batched_gemm_instance
       device_softmax_instance
     )
     target_compile_definitions(onnxruntime_providers_rocm PRIVATE USE_COMPOSABLE_KERNEL)

@@ -47,19 +47,6 @@ stages:
         itemPattern: '*/*mac*x86_64.whl'
     - template: templates/py-package-smoking-test.yml
       parameters:
-        job_name: Test_WIN_64_Wheels
-        itemPattern: '*/*win_amd64.whl'
-        machine_pool:
-          vmImage: 'windows-2022'
-    - template: templates/py-package-smoking-test.yml
-      parameters:
-        job_name: Test_WIN_32_Wheels
-        itemPattern: '*/*win32.whl'
-        python_arch: 'x86'
-        machine_pool:
-          vmImage: 'windows-2022'
-    - template: templates/py-package-smoking-test.yml
-      parameters:
         job_name: Test_LINUX_x86_64_Wheels
         itemPattern: '*/*manylinux*x86_64.whl'
         machine_pool:

@@ -42,11 +42,6 @@ jobs:
   - download: build   # pipeline resource identifier.
     artifact: 'onnxruntime'
 
-  - bash: |
-        set -e -x
-        ls $(Pipeline.Workspace)/build
-        mv "$(Pipeline.Workspace)/build/onnxruntime" "$(Build.BinariesDirectory)/whl"
-
   - task: Bash@3
     inputs:
       targetType: 'inline'
@@ -56,10 +51,10 @@ jobs:
         FILE_NAME="${files[0]}"
         FILE_NAME=$(basename $FILE_NAME)
         PYTHON_PACKAGE_NAME=$(echo "$FILE_NAME" | cut -f 1 -d '-')
-        python3 -m pip install --find-links "$(Build.BinariesDirectory)/whl" $PYTHON_PACKAGE_NAME
+        python3 -m pip install --find-links "$(Pipeline.Workspace)/build/onnxruntime/whl" $PYTHON_PACKAGE_NAME
         python3 -m pip show $PYTHON_PACKAGE_NAME
         python3 -c "import onnxruntime as ort; print(ort.__version__)"
-      workingDirectory: $(Build.BinariesDirectory)
+      workingDirectory: $(Pipeline.Workspace)/build/onnxruntime
     displayName: Test Package Installation
 
   - task: mspremier.PostBuildCleanup.PostBuildCleanup-task.PostBuildCleanup@3

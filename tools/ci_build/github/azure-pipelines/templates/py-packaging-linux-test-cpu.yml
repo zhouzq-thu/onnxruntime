@@ -55,7 +55,7 @@ jobs:
   # The private ADO project
   - ${{ if eq(variables['System.CollectionId'], 'bc038106-a83b-4dab-9dd3-5a41bc58f34c') }}:
     - download: build   # pipeline resource identifier.
-      artifact: 'drop-linux-${{ lower(parameters.device) }}-${{ parameters.arch }}'
+      artifact: 'drop-linux-cpu-${{ parameters.arch }}'
 
     - download: build   # pipeline resource identifier.
       artifact: 'onnxruntime${{ parameters.python_wheel_suffix }}'
@@ -63,7 +63,7 @@ jobs:
     - bash: |
         set -e -x
         ls $(Pipeline.Workspace)/build
-        mv "$(Pipeline.Workspace)/build/drop-linux-${{ lower(parameters.device) }}-${{ parameters.arch }}" $(Build.BinariesDirectory)/${{parameters.cmake_build_type}}
+        mv "$(Pipeline.Workspace)/build/drop-linux-cpu-${{ parameters.arch }}" $(Build.BinariesDirectory)/${{parameters.cmake_build_type}}
         mv "$(Pipeline.Workspace)/build/onnxruntime${{ parameters.python_wheel_suffix }}" "$(Build.BinariesDirectory)/whl"
 
 

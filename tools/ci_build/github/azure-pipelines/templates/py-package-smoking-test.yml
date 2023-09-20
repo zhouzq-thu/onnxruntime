@@ -40,10 +40,7 @@ jobs:
       architecture: ${{ parameters.python_arch }}
 
   - download: build   # pipeline resource identifier.
-      artifact: 'drop-linux-cpu-${{ parameters.arch }}'
-
-  - download: build   # pipeline resource identifier.
-    artifact: 'onnxruntime${{ parameters.python_wheel_suffix }}'
+    artifact: 'onnxruntime'
 
   - bash: |
         set -e -x

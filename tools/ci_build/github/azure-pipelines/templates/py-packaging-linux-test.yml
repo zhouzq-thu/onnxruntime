@@ -4,6 +4,9 @@ parameters:
 
 - name: device
   type: string
+  values:
+   - CPU
+   - GPU
 
 - name: machine_pool
   type: string
@@ -57,12 +60,38 @@ jobs:
         mv "$(Pipeline.Workspace)/build/drop-linux-${{ lower(parameters.device) }}-${{ parameters.arch }}" $(Build.BinariesDirectory)/${{parameters.cmake_build_type}}
         mv "$(Pipeline.Workspace)/build/onnxruntime${{ parameters.python_wheel_suffix }}" "$(Build.BinariesDirectory)/whl"
 
-  - task: Bash@3
-    displayName: 'Bash Script'
-    inputs:
-      targetType: filePath
-      filePath: tools/ci_build/github/linux/run_python_tests.sh
-      arguments: -d ${{ parameters.device }} -c ${{parameters.cmake_build_type}}
+
+  - ${{ if eq(parameters.device, 'CPU') }}:
+    - template: get-docker-image-steps.yml
+      parameters:
+        Dockerfile: tools/ci_build/github/linux/docker/inference/x64/python/cpu/Dockerfile.manylinux2_28_cpu
+        Context: tools/ci_build/github/linux/docker/inference/x64/python/cpu
+        DockerBuildArgs: "--build-arg POLICY=manylinux_2_28 --build-arg BUILD_UID=$( id -u ) --build-arg BASEIMAGE=${{ parameters.base_image }} --build-arg PLATFORM=${{ parameters.arch }} --build-arg PREPEND_PATH=${{ parameters.prepend_path }} --build-arg LD_LIBRARY_PATH_ARG=${{ parameters.ld_library_path_arg }} --build-arg DEVTOOLSET_ROOTPATH=${{ parameters.devtoolset_rootpath }}"
+        Repository: onnxruntimecpubuildpython${{ parameters.arch }}
+        ${{ if eq(parameters.arch, 'aarch64') }}:
+            UpdateDepsTxt: false
+
+      - task: Bash@3
+        displayName: 'Bash Script'
+        inputs:
+          targetType: filePath
+          filePath: tools/ci_build/github/linux/run_python_dockertest.sh
+          arguments: -d ${{ parameters.device }} -c ${{parameters.cmake_build_type}} -i onnxruntimecpubuildpython${{ parameters.arch }}
+
+  - ${{ if eq(parameters.device, 'GPU') }}:
+    - template: get-docker-image-steps.yml
+      parameters:
+        Dockerfile: tools/ci_build/github/linux/docker/Dockerfile.manylinux2_28_cuda11_8_tensorrt8_6
+        Context: tools/ci_build/github/linux/docker
+        DockerBuildArgs: "--network=host --build-arg POLICY=manylinux_2_28 --build-arg PLATFORM=x86_64 --build-arg PREPEND_PATH=/usr/local/cuda/bin --build-arg LD_LIBRARY_PATH_ARG=/usr/local/lib64 --build-arg DEVTOOLSET_ROOTPATH=/usr --build-arg BUILD_UID=$( id -u ) --build-arg PLATFORM=${{ parameters.arch }}"
+        Repository: onnxruntimecuda118xtrt86build${{ parameters.arch }}
+
+    - task: Bash@3
+      displayName: 'Bash Script'
+      inputs:
+        targetType: filePath
+        filePath: tools/ci_build/github/linux/run_python_dockertest.sh
+        arguments: -d ${{ parameters.device }} -c ${{parameters.cmake_build_type}} -i onnxruntimecuda118xtrt86build${{ parameters.arch }}
 
   - task: mspremier.PostBuildCleanup.PostBuildCleanup-task.PostBuildCleanup@3
     displayName: 'Clean Agent Directories'

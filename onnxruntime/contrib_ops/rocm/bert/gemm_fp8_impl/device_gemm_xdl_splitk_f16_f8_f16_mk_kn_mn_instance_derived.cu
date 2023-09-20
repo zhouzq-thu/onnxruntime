@@ -11,7 +11,7 @@
 
 #include "ck/library/tensor_operation_instance/add_device_operation_instance.hpp"
 
-#include "core/providers/rocm/tunable/gemm_ck_fp8.cuh"
+#include "contrib_ops/rocm/bert/gemm_ck_fp8.cuh"
 
 namespace onnxruntime {
 namespace rocm {

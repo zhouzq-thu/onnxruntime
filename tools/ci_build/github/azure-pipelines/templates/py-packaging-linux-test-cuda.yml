@@ -2,6 +2,9 @@ parameters:
 - name: arch
   type: string
 
+- name: base_image
+  type: string
+
 - name: device
   type: string
   values:
@@ -35,7 +38,7 @@ parameters:
   default: 120
 
 jobs:
-- job: Linux_Test_${{ parameters.device }}${{ parameters.extra_job_id }}_${{ parameters.arch }}
+- job: Linux_Test_GPU${{ parameters.extra_job_id }}_${{ parameters.arch }}
   timeoutInMinutes: ${{ parameters.timeout }}
   variables:
     skipComponentGovernanceDetection: true
@@ -76,7 +79,7 @@ jobs:
       inputs:
         targetType: filePath
         filePath: tools/ci_build/github/linux/run_python_dockertest.sh
-        arguments: -d ${{ parameters.device }} -c ${{parameters.cmake_build_type}} -i onnxruntimecpubuildpython${{ parameters.arch }}
+        arguments: -d GPU -c ${{parameters.cmake_build_type}} -i onnxruntimecpubuildpython${{ parameters.arch }}
 
   - ${{ if eq(parameters.device, 'GPU') }}:
     - template: get-docker-image-steps.yml
@@ -91,7 +94,7 @@ jobs:
       inputs:
         targetType: filePath
         filePath: tools/ci_build/github/linux/run_python_dockertest.sh
-        arguments: -d ${{ parameters.device }} -c ${{parameters.cmake_build_type}} -i onnxruntimecuda118xtrt86build${{ parameters.arch }}
+        arguments: -d GPU -c ${{parameters.cmake_build_type}} -i onnxruntimecuda118xtrt86build${{ parameters.arch }}
 
   - task: mspremier.PostBuildCleanup.PostBuildCleanup-task.PostBuildCleanup@3
     displayName: 'Clean Agent Directories'

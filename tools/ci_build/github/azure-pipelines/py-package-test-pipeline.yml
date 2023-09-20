@@ -7,20 +7,30 @@ resources:
 stages:
 - stage: Linux_Test_CPU_x86_64_stage
   jobs:
-  - template: templates/py-packaging-linux-test.yml
+  - template: templates/py-packaging-linux-test-cpu.yml
     parameters:
       arch: 'x86_64'
       machine_pool: 'onnxruntime-Ubuntu2004-AMD-CPU'
       device: 'CPU'
+      base_image: 'registry.access.redhat.com/ubi8/ubi'
+      devtoolset_rootpath: /opt/rh/gcc-toolset-12/root
+      ld_library_path_arg: /opt/rh/gcc-toolset-12/root/usr/lib64:/opt/rh/gcc-toolset-12/root/usr/lib:/opt/rh/gcc-toolset-12/root/usr/lib64/dyninst:/opt/rh/gcc-toolset-12/root/usr/lib/dyninst:/usr/local/lib64
+      prepend_path: '/opt/rh/gcc-toolset-12/root/usr/bin:'
+      extra_build_arg: ${{ parameters.build_py_parameters }}
+      cmake_build_type: ${{ parameters.cmake_build_type }}
 
 - stage: Linux_Test_CPU_aarch64_stage
   dependsOn: []
   jobs:
-  - template: templates/py-packaging-linux-test.yml
+  - template: templates/py-packaging-linux-test-cpu.yml
     parameters:
       arch: 'aarch64'
       machine_pool: 'aiinfra-linux-ARM64-CPU-2019'
       device: 'CPU'
+      base_image: 'arm64v8/almalinux:8'
+      devtoolset_rootpath: /opt/rh/gcc-toolset-12/root
+      ld_library_path_arg: /opt/rh/gcc-toolset-12/root/usr/lib64:/opt/rh/gcc-toolset-12/root/usr/lib:/opt/rh/gcc-toolset-12/root/usr/lib64/dyninst:/opt/rh/gcc-toolset-12/root/usr/lib/dyninst:/usr/local/lib64
+      prepend_path: '/opt/rh/gcc-toolset-12/root/usr/bin:'
 
 - stage: Packages_Somking_Test
   dependsOn: []
@@ -61,7 +71,7 @@ stages:
     - Linux_Test_CPU_aarch64_stage
     - Packages_Somking_Test
   jobs:
-  - template: templates/py-packaging-linux-test.yml
+  - template: templates/py-packaging-linux-test-cuda.yml
     parameters:
       arch: 'x86_64'
       machine_pool: 'Onnxruntime-Linux-GPU'

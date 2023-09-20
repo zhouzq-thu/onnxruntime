@@ -97,7 +97,6 @@ class ApiNode final : public api::NodeRef {
   std::string_view GetExecutionProviderType() const override;
   int SinceVersion() const override;
   int64_t Id() const override;
-  // bool operator==(const NodeRef& other) const override;
 
  private:
   ORT_DISALLOW_COPY_ASSIGNMENT_AND_MOVE(ApiNode);
@@ -422,12 +421,6 @@ int ApiNode::SinceVersion() const {
 int64_t ApiNode::Id() const {
   return node_.Index();
 }
-
-// bool ApiNode::operator==(const NodeRef& other) const {
-//   // we only have ApiNode instances so the reinterpret_cast is safe.
-//   // we check the address of the Node instance as a node is guaranteed to have a single instance at the ORT level
-//   return &reinterpret_cast<const ApiNode&>(other).node_ == &node_;
-// }
 
 // </ApiNode>
 

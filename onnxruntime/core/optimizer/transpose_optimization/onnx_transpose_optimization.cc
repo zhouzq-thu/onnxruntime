@@ -117,7 +117,7 @@ static std::unique_ptr<api::NodeRef> GetDQWithConstInitializerInput(api::GraphRe
       }
 
       // For now keep it simple and don't support per-axis quantization as that would require updating the
-      // scale and zero point values in the DQ node to re-order if transposing or reshape if unsqueezing.
+      // scale and zero point values in the DQ node to re-order if transposing, or reshape if unsqueezing.
       // the rank of the `scale` and `zero point` inputs must match so we only need to check `scale`.
       auto dq_scale = graph.GetConstant(maybe_dq_node->Inputs()[1]);
       if (!dq_scale || dq_scale->NumElements() != 1) {
@@ -397,20 +397,17 @@ static std::vector<int64_t> SortedAxesForTransposedInput(const std::vector<int64
   return new_axes;
 }
 
+static void UpdateDQNodeInputAndShape(api::GraphRef& graph, api::NodeRef& dq, std::string_view new_input) {
+  dq.SetInput(0, new_input);
+  auto new_shape = *graph.GetValueInfo(new_input)->Shape();
+  graph.GetValueInfo(dq.Outputs()[0])->SetShape(&new_shape);
+}
 /////// </Helper Utils> ///////
 
 /////// <Core Helpers> ///////
 /* These helpers hide the most gnarly parts of the transpose optimizer. */
 
 static std::string_view HelpHandleUnsqueeze(HandlerArgs& args, const std::vector<int64_t>& axes);
-
-// update a special-cased DQ node that GetDQWithConstInitializerInput returned when we modify the initializer it was
-// consuming.
-static void UpdateDQNodeInputAndShape(api::GraphRef& graph, api::NodeRef& dq, std::string_view new_input) {
-  dq.SetInput(0, new_input);
-  auto new_shape = *graph.GetValueInfo(new_input)->Shape();
-  graph.GetValueInfo(dq.Outputs()[0])->SetShape(&new_shape);
-}
 
 // Replaces ith input to node with unsqueezed value. Might create a new Unsqueeze node, find an existing one,
 // or reshape an initializer. Unsqueezing can be necessary before transposing inputs of a node that supports
@@ -433,7 +430,7 @@ static void UnsqueezeInput(OptimizerCtx& ctx, api::NodeRef& node, size_t i, cons
     // in 'Case 1' are prior to the DQ so we don't break up any QDQ node units.
     dq_node = GetDQWithConstInitializerInput(ctx.graph, input);
     if (dq_node) {
-      // underlying string is in the Node so is safe to store in string_view constant_dq_input
+      // underlying string for the input name is in the Node so it's safe to store in string_view constant_dq_input
       constant_dq_input = dq_node->Inputs()[0];
       constant = ctx.graph.GetLocalConstant(constant_dq_input);
       // remove the DQ node as a consumer of the initializer while we modify things
@@ -599,7 +596,7 @@ static void TransposeInputImpl(api::GraphRef& graph,
     // in 'Case 1' are prior to the DQ so we don't break up any QDQ node units.
     dq_node = GetDQWithConstInitializerInput(graph, input);
     if (dq_node) {
-      // underlying string is in the Node so is safe to store in string_view constant_dq_input
+      // underlying string for the input name is in the Node so it's safe to store in string_view constant_dq_input
       constant_dq_input = dq_node->Inputs()[0];
       constant = graph.GetLocalConstant(constant_dq_input);
       // remove the DQ node as a consumer of the initializer while we modify things
@@ -627,7 +624,6 @@ static void TransposeInputImpl(api::GraphRef& graph,
     // there are no other consumers.
     // NOTE: As this returns after calling Permute1DConstant we're implicitly assuming there are no
     //       other consumers that need updating. This would typically be the case for this sort of input though.
-    //       Added an `assert` so at least we fail if we get an unexpected model instead of creating an invalid one.
     if (constant->Shape().size() == 1 && constant->Shape()[0] == gsl::narrow_cast<int64_t>(perm.size())) {
       assert(consumers->nodes.size() == 0);
       Permute1DConstant(graph, node, *constant, i, value_to_modify, perm);
@@ -706,10 +702,9 @@ static void TransposeInputImpl(api::GraphRef& graph,
         return;
       }
 
-      // NOTE: We only expect the Transpose to cancel out with the special casing of a DQ node that was originally
+      // NOTE: We expect the Transpose to cancel out when handling a special-cased DQ node that was originally
       // connected to a shared constant initializer, so we don't expect to get here if dq_node is not nullptr.
-      // Assert in a debug build and bail in a release build as there's no mechanism for returning an error currently.
-      // TODO: Should we do a check on perms earlier to avoid getting here?
+      // Assert in a debug build so we can investigate if it ever happens, and bail in a release build.
       assert(!dq_node);
       if (dq_node) {
         return;
@@ -915,7 +910,6 @@ static int EstimateTransposeValueCost(const api::GraphRef& graph, std::string_vi
     if (perm2 != std::nullopt) {
       if (*perm2 == perm_inv && CanLikelyRemoveTranspose(graph, *node, extended_handlers)) {
         return -EstimateValueRank(graph, input);
-        // return -EstimateValueRank(graph, input) - 1;  // for testing. need to figure out how to setup a test
       } else {
         return 0;
       }

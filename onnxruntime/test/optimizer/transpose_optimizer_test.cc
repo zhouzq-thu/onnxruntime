@@ -4553,8 +4553,6 @@ TEST(TransposeOptimizerTests, QnnTransposeReshapeQDQ) {
   auto internal_testing_ep = std::make_unique<InternalTestingEP>(empty_set, empty_set, DataLayout::NHWC);
   internal_testing_ep->EnableStaticKernels().TakeAllNodes();
 
-  ASSERT_STATUS_OK(so.config_options.AddConfigEntry(kDebugLayoutTransformation, "1"));
-
   InferenceSessionWrapper session{so, GetEnvironment()};
   ASSERT_STATUS_OK(session.RegisterExecutionProvider(std::move(internal_testing_ep)));
   ASSERT_STATUS_OK(session.Load(model_uri));
@@ -4621,16 +4619,13 @@ static void CheckSharedInitializerHandling(bool broadcast) {
   }
 
   {
-    // so.graph_optimization_level = TransformerLevel::Level1;  // enable transpose optimizer
-
     InferenceSessionWrapper session{so, GetEnvironment()};
-    // ASSERT_STATUS_OK(session.FilterEnabledOptimizers({"ConstantFolding",
-    //                                                   "CommonSubexpressionElimination",
-    //                                                   "ConstantSharing"}));
     ASSERT_STATUS_OK(session.Load(model_uri));
 
     // we call the ONNX transpose optimizer directly as we want to plug in the AlwaysPushTranspose cost check.
     // this is to simplify the model required to exercise the shared initializer handling.
+    // it also means we don't need to disable optimizers that might alter the graph before the transpose optimizer
+    // runs (ConstantFolding, CommonSubexpressionElimination, ConstantSharing)
     Graph& graph = session.GetMutableGraph();
     CPUAllocator allocator;
 
@@ -4644,7 +4639,7 @@ static void CheckSharedInitializerHandling(bool broadcast) {
     ASSERT_TRUE(graph.GraphResolveNeeded());
 
     std::map<std::string, int> op_to_count = CountOpsInGraph(graph);
-    EXPECT_EQ(op_to_count["Transpose"], 0);
+    EXPECT_EQ(op_to_count["Transpose"], 0) << "The Transpose nodes should have been pushed through and canceled out.";
 
     ASSERT_STATUS_OK(graph.Resolve());
 
@@ -4656,10 +4651,10 @@ static void CheckSharedInitializerHandling(bool broadcast) {
               testing::ContainerEq(fetches[0].Get<Tensor>().DataAsSpan<float>()));
 }
 
-// test we re-use a modified shared initializer wherever possible. model has one initializer that is used by 2 DQ nodes
+// test we re-use a modified shared initializer wherever possible. model has one initializer that is used by 3 DQ nodes
 // and one initializer that is used by 2 Add nodes. both cases should be handled with the initializer being
 // modified in-place for the first usage, and the Transpose added to the second usage being cancelled out when the
-// Transpose is pushed down.
+// original Transpose at the start of the model is pushed down.
 TEST(TransposeOptimizerTests, SharedInitializerHandling) {
   CheckSharedInitializerHandling(/*broadcast*/ false);
 }
@@ -4667,8 +4662,8 @@ TEST(TransposeOptimizerTests, SharedInitializerHandling) {
 // same setup as the above test, however the initializer is broadcast to bring UnsqueezeInput into play.
 // the in-place modification of the initializer for the first usage results in
 //   <initializer> -> Transpose -> Squeeze -> {DQ | Add}
-// the second usage should first attempt to cancel out the Squeeze in UnsqueezeInput, followed by cancelling out
-// the Transpose in TransposeInput.
+// the later usages of the initializer should attempt to cancel out the Squeeze in UnsqueezeInput,
+// followed by cancelling out the Transpose in TransposeInput.
 TEST(TransposeOptimizerTests, SharedInitializerHandlingBroadcast) {
   CheckSharedInitializerHandling(/*broadcast*/ true);
 }

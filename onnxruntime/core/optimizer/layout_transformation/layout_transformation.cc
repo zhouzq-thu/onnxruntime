@@ -137,8 +137,7 @@ Status TransformLayoutForEP(Graph& graph, bool& modified, const IExecutionProvid
         WrapTransposesAroundNode(*api_graph, *node, {&input_perm}, {&output_perm});
       }
 
-      // Technically Resize doesn't need to change domain as the ONNX Resize spec is not layout sensitive but it's
-      // easier for an EP that requested NHWC layout to track the change if we do this.
+      // TODO: Technically Resize doesn't need to change domain as the ONNX Resize spec is not layout sensitive.
       SwapNodeOpTypeAndDomain(*api_graph, *node, node->OpType(), kMSInternalNHWCDomain);
       modified = true;
     }

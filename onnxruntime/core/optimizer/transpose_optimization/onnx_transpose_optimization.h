@@ -39,15 +39,6 @@ struct HandlerInfo {
 };
 
 struct OptimizerCtx {
-  // OptimizerCtx(int64_t opset_in, api::GraphRef& graph_in, const std::string provider_type_in,
-  //              CostCheckFn cost_check_fn_in, const HandlerMap& extended_handlers_in)
-  //     : opset{opset_in},
-  //       graph{graph_in},
-  //       provider_type{provider_type_in},
-  //       cost_check_fn{cost_check_fn_in},
-  //       extended_handlers{extended_handlers_in} {
-  // }
-
   int64_t opset;
   api::GraphRef& graph;
   const std::string provider_type;

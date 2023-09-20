@@ -11,7 +11,7 @@ c) BUILD_CONFIG=${OPTARG};;
 esac
 done
 
-if [ $BUILD_DEVICE = "GPU" ]; then
+if [ $DEVICE = "GPU" ]; then
   ADDITIONAL_DOCKER_PARAMETER="--gpus all"
 fi
 

@@ -15,6 +15,7 @@ c) BUILD_CONFIG=${OPTARG};;
 esac
 done
 
+export PATH=/opt/python/cp38-cp38/bin:$PATH
 cd /build
 files=(whl/*.whl)
 FILE_NAME="${files[0]}"

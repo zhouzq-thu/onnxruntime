@@ -3,6 +3,13 @@ resources:
   - pipeline: build
     source: 'Python packaging pipeline'
     trigger: true
+  #TODO: Remove the following dependency. Running python tests should not need to use manylinux.
+  repositories:
+  - repository: manylinux # The name used to reference this repository in the checkout step
+    type: Github
+    endpoint: Microsoft
+    name: pypa/manylinux
+    ref: 5eda9aded5462201e6310105728d33016e637ea7
 
 stages:
 - stage: Linux_Test_CPU_x86_64_stage

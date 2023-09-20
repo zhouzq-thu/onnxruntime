@@ -74,6 +74,12 @@ jobs:
         ls $(Pipeline.Workspace)/build/tmp
 
 
+  - task: BinSkim@4
+    displayName: 'Run BinSkim'
+    inputs:
+      AnalyzeTargetGlob: '$(Pipeline.Workspace)/build/tmp/**/*.so'
+      continueOnError: true
+
   - template: get-docker-image-steps.yml
     parameters:
       Dockerfile: tools/ci_build/github/linux/docker/inference/x64/python/cpu/Dockerfile.manylinux2_28_cpu

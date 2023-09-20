@@ -68,15 +68,17 @@ jobs:
         ls $(Pipeline.Workspace)/build
         mv "$(Pipeline.Workspace)/build/drop-linux-cpu-${{ parameters.arch }}" $(Build.BinariesDirectory)/${{parameters.cmake_build_type}}
         mv "$(Pipeline.Workspace)/build/onnxruntime${{ parameters.python_wheel_suffix }}" "$(Build.BinariesDirectory)/whl"
-        cp -r "$(Build.BinariesDirectory)/whl" $(Pipeline.Workspace)/build/tmp
+        cp -r "$(Build.BinariesDirectory)/whl" $(Build.BinariesDirectory)/tmp
+        cd $(Pipeline.Workspace)/build
         find "$(Build.BinariesDirectory)/tmp" -name '*.whl' -exec bash -c 'unzip -d "${1%.*}" "$1"' _ {} \;
-        ls $(Pipeline.Workspace)/build/tmp
+        ls $(Pipeline.Workspace)/build
+        ls $(Build.BinariesDirectory)/tmp
 
 
   - task: BinSkim@4
     displayName: 'Run BinSkim'
     inputs:
-      AnalyzeTargetGlob: '$(Pipeline.Workspace)/build/tmp/**/*.so'
+      AnalyzeTargetGlob: '$(Build.BinariesDirectory)/tmp/**/*.so'
       continueOnError: true
 
   - template: get-docker-image-steps.yml

@@ -47,7 +47,7 @@ jobs:
       targetType: 'inline'
       script: |
         set -ex
-        files=(whl/*.whl)
+        files=(*.whl)
         FILE_NAME="${files[0]}"
         FILE_NAME=$(basename $FILE_NAME)
         PYTHON_PACKAGE_NAME=$(echo "$FILE_NAME" | cut -f 1 -d '-')

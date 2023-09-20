@@ -5,6 +5,15 @@ parameters:
 - name: base_image
   type: string
 
+- name: devtoolset_rootpath
+  type: string
+
+- name: ld_library_path_arg
+  type: string
+
+- name: prepend_path
+  type: string
+
 - name: machine_pool
   type: string
 

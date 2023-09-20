@@ -54,6 +54,7 @@ export interface OrtWasmModule extends EmscriptenModule {
       enableProfiling: boolean, profileFilePrefix: number, logId: number, logSeverityLevel: number,
       logVerbosityLevel: number, optimizedModelFilePath: number): number;
   _OrtAppendExecutionProvider(sessionOptionsHandle: number, name: number): number;
+  _OrtAddFreeDimensionOverride(sessionOptionsHandle: number, name: number, dim: number): number;
   _OrtAddSessionConfigEntry(sessionOptionsHandle: number, configKey: number, configValue: number): number;
   _OrtReleaseSessionOptions(sessionOptionsHandle: number): void;
 
@@ -62,6 +63,38 @@ export interface OrtWasmModule extends EmscriptenModule {
   _OrtReleaseRunOptions(runOptionsHandle: number): void;
 
   _OrtEndProfiling(sessionHandle: number): number;
+  // #endregion
+
+  // #region ORT Training APIs
+  _OrtTrainingLoadCheckpoint?(dataOffset: number, dataLength: number): number;
+
+  _OrtTrainingReleaseCheckpoint?(checkpointHandle: number): void;
+
+  _OrtTrainingCreateSession?
+      (sessionOptionsHandle: number, checkpointHandle: number, trainOffset: number, trainLength: number,
+       evalOffset: number, evalLength: number, optimizerOffset: number, optimizerLength: number): number;
+
+  _OrtTrainingLazyResetGrad?(trainingHandle: number): number;
+
+  _OrtTrainingRunTrainStep?
+      (trainingHandle: number, inputsOffset: number, inputCount: number, outputsOffset: number, outputCount: number,
+       runOptionsHandle: number): number;
+
+  _OrtTrainingOptimizerStep?(trainingHandle: number, runOptionsHandle: number): number;
+
+  _OrtTrainingEvalStep?
+      (trainingHandle: number, inputsOffset: number, inputCount: number, outputsOffset: number, outputCount: number,
+       runOptionsHandle: number): number;
+
+  _OrtTrainingGetParametersSize?(trainingHandle: number, paramSizeT: number, trainableOnly: boolean): number;
+
+  _OrtTrainingCopyParametersToBuffer?
+      (trainingHandle: number, parametersBuffer: number, parameterCount: number, trainableOnly: boolean): number;
+
+  _OrtTrainingCopyParametersFromBuffer?
+      (trainingHandle: number, parametersBuffer: number, parameterCount: number, trainableOnly: boolean): number;
+
+  _OrtTrainingReleaseSession?(trainingHandle: number): void;
   // #endregion
 
   // #region config

@@ -71,12 +71,12 @@ jobs:
         ${{ if eq(parameters.arch, 'aarch64') }}:
             UpdateDepsTxt: false
 
-      - task: Bash@3
-        displayName: 'Bash Script'
-        inputs:
-          targetType: filePath
-          filePath: tools/ci_build/github/linux/run_python_dockertest.sh
-          arguments: -d ${{ parameters.device }} -c ${{parameters.cmake_build_type}} -i onnxruntimecpubuildpython${{ parameters.arch }}
+    - task: Bash@3
+      displayName: 'Bash Script'
+      inputs:
+        targetType: filePath
+        filePath: tools/ci_build/github/linux/run_python_dockertest.sh
+        arguments: -d ${{ parameters.device }} -c ${{parameters.cmake_build_type}} -i onnxruntimecpubuildpython${{ parameters.arch }}
 
   - ${{ if eq(parameters.device, 'GPU') }}:
     - template: get-docker-image-steps.yml

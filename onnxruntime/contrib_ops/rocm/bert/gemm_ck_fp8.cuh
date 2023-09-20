@@ -13,10 +13,7 @@
 #include "ck/ck.hpp"
 #include "ck/utility/functional3.hpp"
 #include "ck/tensor_operation/gpu/device/tensor_layout.hpp"
-// #include "ck/tensor_operation/gpu/device/device_gemm.hpp"
 #include "ck/tensor_operation/gpu/device/device_gemm_splitk.hpp"
-#include "ck/tensor_operation/gpu/device/device_gemm_splitk_hgy.hpp"
-// #include "ck/library/tensor_operation_instance/gpu/gemm_splitk.hpp"
 #include "ck/tensor_operation/gpu/element/element_wise_operation.hpp"
 #endif
 

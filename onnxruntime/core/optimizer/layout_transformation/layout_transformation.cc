@@ -17,7 +17,7 @@ namespace {
 /// <summary>
 /// Default function for checking if a node should have its layout changed.
 ///
-/// For now we also put EP specific logic here.
+/// For now we put EP specific logic here.
 /// Longer term, if required, the EP API could allow the EP to provide a delegate.
 /// </summary>
 /// <param name="node">Node to check</param>
@@ -27,7 +27,7 @@ bool ConvertNodeLayout(const api::NodeRef& node) {
 
   // handle CUDA special cases
   if (node.GetExecutionProviderType() == kCudaExecutionProvider) {
-    // TODO: check if it's a CUDA kernel that wants NHWC
+    // TODO: Update as per https://github.com/microsoft/onnxruntime/pull/17200
   }
 
   // skip if domain is unknown
@@ -165,7 +165,7 @@ Status TransformLayoutForEP(Graph& graph, bool& modified, const IExecutionProvid
 
   const auto max_node_idx = graph.MaxNodeIndex();
   OptimizeResult result = onnx_transpose_optimization::Optimize(*api_graph, execution_provider.Type(),
-                                                                PostLayoutTransformCostCheck, OrtHandlers());
+                                                                PostLayoutTransformCostCheck, OrtExtendedHandlers());
 
   if (result.error_msg) {
     return ORT_MAKE_STATUS(ONNXRUNTIME, FAIL, "Layout/Transpose optimization for ", execution_provider.Type(),

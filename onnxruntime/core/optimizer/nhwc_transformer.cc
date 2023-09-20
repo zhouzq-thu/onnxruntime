@@ -228,7 +228,7 @@ Status NhwcTransformer::ApplyImpl(Graph& graph, bool& modified, int graph_level,
   }
 
   if (modified) {
-    Optimize(*api_graph, kCpuExecutionProvider, OrtEPCostCheck, OrtHandlers());
+    Optimize(*api_graph, kCpuExecutionProvider, OrtEPCostCheck, OrtExtendedHandlers());
   }
 
   return Status::OK();

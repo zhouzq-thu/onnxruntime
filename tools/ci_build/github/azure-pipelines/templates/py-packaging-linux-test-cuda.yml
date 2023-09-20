@@ -2,9 +2,6 @@ parameters:
 - name: arch
   type: string
 
-- name: base_image
-  type: string
-
 - name: device
   type: string
   values:

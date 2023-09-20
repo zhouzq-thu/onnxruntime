@@ -44,7 +44,6 @@ python3 -m pip install pytest
 # The "--no-index" flag is crucial. The local whl folder is just an additional source. Pypi's doc says "there is no 
 # ordering in the locations that are searched" if we don't disable the default one with "--no-index"
 python3 -m pip install --no-index --find-links /build/whl $PYTHON_PACKAGE_NAME
-ln -s /data/models /build
 cd /build/$BUILD_CONFIG
 # Restore file permissions
 xargs -a perms.txt chmod a+x

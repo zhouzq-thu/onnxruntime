@@ -68,9 +68,8 @@ jobs:
         ls $(Pipeline.Workspace)/build
         mv "$(Pipeline.Workspace)/build/drop-linux-cpu-${{ parameters.arch }}" $(Build.BinariesDirectory)/${{parameters.cmake_build_type}}
         mv "$(Pipeline.Workspace)/build/onnxruntime${{ parameters.python_wheel_suffix }}" "$(Build.BinariesDirectory)/whl"
-        mkdir -p $(Pipeline.Workspace)/build/tmp
-        cd $(Pipeline.Workspace)/build/tmp
-        find "$(Build.BinariesDirectory)/whl" -name '*.whl' -exec bash -c 'unzip -d "${1%.*}" "$1"' _ {} \;
+        cp -r "$(Build.BinariesDirectory)/whl" $(Pipeline.Workspace)/build/tmp
+        find "$(Build.BinariesDirectory)/tmp" -name '*.whl' -exec bash -c 'unzip -d "${1%.*}" "$1"' _ {} \;
         ls $(Pipeline.Workspace)/build/tmp
 
 

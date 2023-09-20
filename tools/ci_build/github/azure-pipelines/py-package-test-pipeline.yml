@@ -16,8 +16,6 @@ stages:
       devtoolset_rootpath: /opt/rh/gcc-toolset-12/root
       ld_library_path_arg: /opt/rh/gcc-toolset-12/root/usr/lib64:/opt/rh/gcc-toolset-12/root/usr/lib:/opt/rh/gcc-toolset-12/root/usr/lib64/dyninst:/opt/rh/gcc-toolset-12/root/usr/lib/dyninst:/usr/local/lib64
       prepend_path: '/opt/rh/gcc-toolset-12/root/usr/bin:'
-      extra_build_arg: ${{ parameters.build_py_parameters }}
-      cmake_build_type: ${{ parameters.cmake_build_type }}
 
 - stage: Linux_Test_CPU_aarch64_stage
   dependsOn: []

@@ -316,20 +316,6 @@ TEST(TransposeOptimizerTests, TestPadNonconst) {
                     /*opset_version*/ {11, 18});
 }
 
-// The CUDA Resize kernel assumes that the input is NCHW and
-// Resize can't be supported in ORT builds with CUDA enabled.
-// TODO: Enable this once the CUDA Resize kernel is implemented
-// "generically" (i.e.) aligning with the generic nature of the
-// ONNX spec.
-// See https://github.com/microsoft/onnxruntime/pull/10824 for
-// a similar fix applied to the CPU Resize kernel.
-// Per tests included in #10824, the ROCM EP also generates
-// incorrect results when this handler is used, so the Resize
-// handler is not enabled even for those builds.
-//
-// The QNN EP requires the input to be NHWC, so the Resize handler is also not enabled
-// for QNN builds.
-#if !defined(USE_CUDA) && !defined(USE_ROCM) && !defined(USE_QNN)
 TEST(TransposeOptimizerTests, TestResize) {
   auto build_test_case_1 = [&](ModelTestBuilder& builder) {
     auto* input0_arg = MakeInput<float>(builder, {{4, -1, 2, -1}}, {4, 6, 2, 10}, 0.0, 1.0);
@@ -358,7 +344,9 @@ TEST(TransposeOptimizerTests, TestResize) {
   TransformerTester(build_test_case_1,
                     check_optimized_graph_1,
                     TransformerLevel::Default,
-                    TransformerLevel::Level1,
+                    // need the level 2 TransposeOptimizer as pushing a Transpose through a Resize requires it to be
+                    // assigned to the CPU EP first
+                    TransformerLevel::Level2,
                     /*opset_version*/ {10, 18});
 }
 
@@ -386,7 +374,9 @@ TEST(TransposeOptimizerTests, TestResizeOpset11) {
   TransformerTester(build_test_case_1,
                     check_optimized_graph_1,
                     TransformerLevel::Default,
-                    TransformerLevel::Level1,
+                    // need the level 2 TransposeOptimizer as pushing a Transpose through a Resize requires it to be
+                    // assigned to the CPU EP first
+                    TransformerLevel::Level2,
                     /*opset_version*/ {11, 18});
 }
 
@@ -414,7 +404,9 @@ TEST(TransposeOptimizerTests, TestResizeOpset15) {
   TransformerTester(build_test_case_1,
                     check_optimized_graph_1,
                     TransformerLevel::Default,
-                    TransformerLevel::Level1,
+                    // need the level 2 TransposeOptimizer as pushing a Transpose through a Resize requires it to be
+                    // assigned to the CPU EP first
+                    TransformerLevel::Level2,
                     /*opset_version*/ {15, 18});
 }
 
@@ -444,7 +436,9 @@ TEST(TransposeOptimizerTests, TestResizeSizeRoi) {
   TransformerTester(build_test_case_1,
                     check_optimized_graph_1,
                     TransformerLevel::Default,
-                    TransformerLevel::Level1,
+                    // need the level 2 TransposeOptimizer as pushing a Transpose through a Resize requires it to be
+                    // assigned to the CPU EP first
+                    TransformerLevel::Level2,
                     /*opset_version*/ {15, 18});
 }
 
@@ -478,7 +472,9 @@ TEST(TransposeOptimizerTests, TestResizeRoiScalesZeroRank0) {
   TransformerTester(build_test_case_1,
                     check_optimized_graph_1,
                     TransformerLevel::Default,
-                    TransformerLevel::Level1,
+                    // need the level 2 TransposeOptimizer as pushing a Transpose through a Resize requires it to be
+                    // assigned to the CPU EP first
+                    TransformerLevel::Level2,
                     {12, 18});
 }
 
@@ -501,13 +497,17 @@ TEST(TransposeOptimizerTests, TestResizeNonconst) {
 
   auto check_optimized_graph_1 = [&](InferenceSessionWrapper& session) {
     int transpose_cost = EstimateTransposeCost(session.GetGraph());
-    EXPECT_EQ(transpose_cost, 0);
+    // we only put a Transpose through a Resize for the CPU EP currently
+    if (session.GetSessionState().GetExecutionProviders().NumProviders() > 1)
+      EXPECT_EQ(transpose_cost, 0);
   };
 
   TransformerTester(build_test_case_1,
                     check_optimized_graph_1,
                     TransformerLevel::Default,
-                    TransformerLevel::Level1,
+                    // need the level 2 TransposeOptimizer as pushing a Transpose through a Resize requires it to be
+                    // assigned to the CPU EP first
+                    TransformerLevel::Level2,
                     /*opset_version*/ {11, 18});
 }
 
@@ -536,11 +536,12 @@ TEST(TransposeOptimizerTests, TestResizeNonconstOpset13) {
   TransformerTester(build_test_case_1,
                     check_optimized_graph_1,
                     TransformerLevel::Default,
-                    TransformerLevel::Level1,
+                    // need the level 2 TransposeOptimizer as pushing a Transpose through a Resize requires it to be
+                    // assigned to the CPU EP first
+                    TransformerLevel::Level2,
                     /*opset_version*/ {13, 18});
 }
 
-#endif
 TEST(TransposeOptimizerTests, TestAdd) {
   auto build_test_case_1 = [&](ModelTestBuilder& builder) {
     auto* input0_arg = builder.MakeInput<float>({4, 6, 10}, 0.0, 1.0);

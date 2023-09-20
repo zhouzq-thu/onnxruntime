@@ -18,10 +18,15 @@ namespace onnxruntime {
 
 Status TransposeOptimizer::ApplyImpl(Graph& graph, bool& modified, int graph_level,
                                      const logging::Logger& logger) const {
-  auto api_graph = MakeApiGraph(graph, cpu_allocator_, /*new_node_ep*/ nullptr);
-
-  OptimizeResult result = onnx_transpose_optimization::Optimize(*api_graph, "", /* default cost check*/ nullptr,
-                                                                OrtExtendedHandlers());
+  OptimizeResult result;
+  if (ep_.empty()) {
+    auto api_graph = MakeApiGraph(graph, cpu_allocator_, /*new_node_ep*/ nullptr);
+    result = onnx_transpose_optimization::Optimize(*api_graph, "", /* default cost check*/ nullptr,
+                                                   OrtExtendedHandlers());
+  } else {
+    auto api_graph = MakeApiGraph(graph, cpu_allocator_, /*new_node_ep*/ ep_.c_str());
+    result = onnx_transpose_optimization::Optimize(*api_graph, ep_, OrtEPCostCheck, OrtExtendedHandlers());
+  }
 
   if (result.error_msg) {
     // currently onnx_layout_transformation::Optimize only fails if we hit an unsupported opset.

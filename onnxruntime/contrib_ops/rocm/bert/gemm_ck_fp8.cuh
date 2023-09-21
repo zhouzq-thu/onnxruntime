@@ -145,8 +145,8 @@ static_assert(std::is_invocable_r_v<void, Scale,
                                     const ck::f8_t&, const ck::f8_t&>);
 
 static_assert(!std::is_invocable_r_v<void, Scale,
-                                    ck::half_t&, ck::half_t&, ck::half_t&, ck::half_t&,
-                                    const ck::f8_t&, const ck::f8_t&, const ck::f8_t&, const ck::f8_t&>);
+                                     ck::half_t&, ck::half_t&, ck::half_t&, ck::half_t&,
+                                     const ck::f8_t&, const ck::f8_t&, const ck::f8_t&, const ck::f8_t&>);
 
 struct MacPassThrough {
   __forceinline__ __device__ void operator()(ck::half_t& y, const ck::f8_t& x) const {
@@ -165,7 +165,7 @@ struct MacScale {
   __forceinline__ __device__ void operator()(ck::half_t& y, const ck::half_t& x) const {
     float scale = nullptr == dev_scale_ptr ? scale_value : *dev_scale_ptr;
 
-    uint8_t x_uint8 = reinterpret_cast<const uchar2&>(x).data[0]; // extract low 8 bits as fp8
+    uint8_t x_uint8 = reinterpret_cast<const uchar2&>(x).data[0];  // extract low 8 bits as fp8
     ck::f8_t x_f8 = reinterpret_cast<ck::f8_t&>(x_uint8);
     y = scale * fast_type_convert<ck::half_t>(x_f8);
   }
@@ -285,6 +285,22 @@ auto GetCKF8SplitKGemmTypeStringAndOps() {
 #endif  // USE_COMPOSABLE_KERNEL
 
 }  // namespace internal
+
+template <typename TA, typename TB, typename TC, typename ALayout, typename BLayout>
+class F8GemmTunableOp : public TunableOp<FP8GemmParams<TA, TB, TC>> {
+ public:
+  F8GemmTunableOp() {
+#ifdef USE_COMPOSABLE_KERNEL
+    for (auto&& [_, op] : internal::GetCKF8SplitKGemmTypeStringAndOps<TA, TB, TC, ALayout, BLayout>()) {
+      ORT_UNUSED_PARAMETER(_);
+      this->RegisterOp(std::move(op));
+    }
+#else
+    static_assert(false, "CK is required to support fp8 computing")
+#endif
+  }
+};
+
 }  // namespace blas
 }  // namespace tunable
 }  // namespace rocm

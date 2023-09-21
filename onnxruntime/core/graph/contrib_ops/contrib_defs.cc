@@ -1969,6 +1969,48 @@ ONNX_MS_OPERATOR_SET_SCHEMA(SparseToDenseMatMul, 1,
                                   sparseCompatibleMatmulShapeInference(ctx, 0, 1);
                                 }));
 
+ONNX_MS_OPERATOR_SET_SCHEMA(F8MatMul, 1,
+                            OpSchema()
+                                // Y = maybe_cvt_fp8_to_f16(scale_a * A) @ maybe_cvt_fp8_to_f16(scale_b * B)
+                                .Input(0, "A", "N-dimensional matrix A", "T1")
+                                .Input(1, "B", "N-dimensional matrix B", "T2")
+                                .Attr("scale_a", "scale of A", AttributeProto::FLOAT, 1.0f)
+                                .Attr("scale_b", "scale of B", AttributeProto::FLOAT, 1.0f)
+                                .Output(0, "Y", "Matrix multiply results", "T3")
+                                .TypeConstraint("T1", {"tensor(float16)", "tensor(float8e4m3fnuz)"}, "Constrain input and output types to float tensors.")
+                                .TypeConstraint("T2", {"tensor(float16)", "tensor(float8e4m3fnuz)"}, "Constrain input and output types to float tensors.")
+                                .TypeConstraint("T", {"tensor(float16)"}, "Constrain output types to float16.")
+                                .SetDoc("")
+                                .TypeAndShapeInferenceFunction([](ONNX_NAMESPACE::InferenceContext& ctx) {
+                                  if (!ctx.getInputType(0)->has_tensor_type() || ctx.getInputType(1)->has_tensor_type()) {
+                                    return;
+                                  }
+
+                                  if (ctx.getInputType(0)->tensor_type().has_elem_type() && ctx.getInputType(1)->tensor_type().has_elem_type()) {
+                                    auto a_type = ctx.getInputType(0)->tensor_type().elem_type();
+                                    auto b_type = ctx.getInputType(1)->tensor_type().elem_type();
+                                    ORT_ENFORCE(a_type == ONNX_NAMESPACE::TensorProto::FLOAT16 && b_type == ONNX_NAMESPACE::TensorProto::FLOAT8E4M3FNUZ ||
+                                                a_type == ONNX_NAMESPACE::TensorProto::FLOAT8E4M3FNUZ && b_type == ONNX_NAMESPACE::TensorProto::FLOAT16);
+                                  }
+
+                                  if (!ctx.getInputType(0)->tensor_type().has_shape() || !ctx.getInputType(1)->tensor_type().has_shape()) {
+                                    return;
+                                  }
+
+                                  auto a_shape = getInputShape(ctx, 0);
+                                  auto b_shape = getInputShape(ctx, 1);
+
+                                  ORT_ENFORCE(a_shape.dim_size() >= 2);
+                                  ORT_ENFORCE(b_shape.dim_size() == 2);
+                                  ORT_ENFORCE(a_shape.dim(a_shape.dim_size() - 1).dim_value() == b_shape.dim(0).dim_value());
+
+                                  ONNX_NAMESPACE::TensorShapeProto output_shape;
+                                  *output_shape.mutable_dim() = a_shape.dim();
+                                  *output_shape.mutable_dim(output_shape.dim_size() -1) = b_shape.dim(0);
+                                  updateOutputShape(ctx, 0, output_shape);
+                                  updateOutputElemType(ctx, 0, ONNX_NAMESPACE::TensorProto::FLOAT16);
+                                 }));
+
 ONNX_MS_OPERATOR_SET_SCHEMA(MurmurHash3, 1,
                             OpSchema()
                                 .SetDoc(R"DOC(The underlying implementation is MurmurHash3_x86_32 generating low latency 32bits hash suitable for implementing lookup tables, Bloom filters, count min sketch or feature hashing.)DOC")

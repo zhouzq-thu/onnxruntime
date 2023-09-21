@@ -133,7 +133,7 @@ static std::unique_ptr<api::NodeRef> GetDQWithConstInitializerInput(const api::G
 
       // DQ output is only used by the node we're modifying.
       auto dq_consumers = graph.GetValueConsumers(dq_output_name);
-      if (!dq_consumers->comprehensive || dq_consumers->nodes.size() == 1) {
+      if (!dq_consumers->comprehensive || dq_consumers->nodes.size() != 1) {
         break;
       }
 

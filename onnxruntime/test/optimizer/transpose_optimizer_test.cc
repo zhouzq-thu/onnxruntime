@@ -4624,7 +4624,7 @@ TEST(TransposeOptimizerTests, SharedInitializerHandling) {
 // the in-place modification of the initializer for the first usage results in
 //   <initializer> -> Transpose -> Squeeze -> {DQ | Add}
 // the later usages of the initializer should attempt to cancel out the Squeeze in UnsqueezeInput,
-// followed by cancelling out the Transpose in TransposeInput.
+// followed by canceling out the Transpose in TransposeInput.
 TEST(TransposeOptimizerTests, SharedInitializerHandlingBroadcast) {
   CheckSharedInitializerHandling(/*broadcast*/ true);
 }

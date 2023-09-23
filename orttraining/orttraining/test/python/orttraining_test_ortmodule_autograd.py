@@ -1717,3 +1717,243 @@ def test_customized_shape_inference():
     ).train()
     _ = ortmodule(torch.randn(output_size, dtype=torch.float))
     _check_pythonop_shape(ortmodule)
+
+
+def test_python_op_return_persistent_param_as_value():
+    """Some PythonOp return values that are still used by PyTorch computation. This test makes sure that ORTModule
+    will not release/erase the storage of those return values during tear down OrtValue of the corresponding PythonOp
+    return values.
+    """
+
+    class SimplePassThrough(torch.autograd.Function):
+        @staticmethod
+        def forward(ctx, x):
+            return x.detach()
+
+        @staticmethod
+        def backward(ctx, grad_output):
+            return grad_output
+
+    class GeluWithExternalOutput(torch.autograd.Function):
+        @staticmethod
+        def forward(ctx, x, bias_param):
+            ctx.save_for_backward(x)
+            return x * 0.5 * (1.0 + torch.tanh(0.79788456 * x * (1 + 0.044715 * x * x))), bias_param.detach()
+
+        @staticmethod
+        def backward(ctx, *grad_outputs):
+            (x,) = ctx.saved_tensors
+            tanh_out = torch.tanh(0.79788456 * x * (1 + 0.044715 * x * x))
+            ff = 0.5 * x * ((1 - tanh_out * tanh_out) * (0.79788456 + 0.1070322243 * x * x)) + 0.5 * (1 + tanh_out)
+            g = ff * grad_outputs[0]
+            return g, grad_outputs[1]
+
+    class TestLayer(torch.nn.Module):
+        def __init__(self, output_size):
+            super().__init__()
+            self.relu = GeluWithExternalOutput.apply
+            self._output_size = output_size
+            self.bias = Parameter(torch.empty(output_size, device=torch.cuda.current_device(), dtype=torch.float))
+            self.w = Parameter(
+                torch.empty(output_size, output_size, device=torch.cuda.current_device(), dtype=torch.float)
+            )
+            with torch.no_grad():
+                self.bias.uniform_()
+                self.w.uniform_()
+
+        def forward(self, model_input):
+            activation0 = torch.add(model_input, 0.4)
+            activation1 = activation0.view(self._output_size, -1)
+
+            # Returned detached_bias_param Tensor shares the same storage with self.bias
+            # We are testing to make sure ORT will not erase the storage of self.bias during tear down OrtValue as
+            # the returned value of the SimplePassThrough PythonOp.
+            detached_bias_param = SimplePassThrough.apply(self.bias)
+            relu_out, detached_bias_param = self.relu(activation1, detached_bias_param)
+            activation2 = torch.add(relu_out, self.bias)
+            activation3 = torch.add(activation2, detached_bias_param)
+            activation3 = torch.matmul(self.w, activation3)
+            activation4 = torch.div(activation3, 1000)
+            return activation4
+
+    class TestModule(torch.nn.Module):
+        def __init__(self, output_size) -> None:
+            super().__init__()
+            self.layers = torch.nn.ModuleList([TestLayer(output_size) for i in range(6)])
+
+        def forward(self, x):
+            # ModuleList can act as an iterable, or be indexed using ints
+            for layer in self.layers:
+                x = x.view(-1)
+                x = torch.nn.functional.relu(layer(x))
+            return x
+
+    device = "cuda"
+    output_size = 1024
+    pt_model = TestModule(output_size).to(device)
+    from onnxruntime.training.ortmodule import DebugOptions, LogLevel, ORTModule
+
+    ort_model = ORTModule(
+        copy.deepcopy(pt_model), DebugOptions(save_onnx=True, log_level=LogLevel.VERBOSE, onnx_prefix="0919")
+    )
+
+    def _run_step(model, input):
+        loss = model(input).sum()
+        loss.backward()
+        return loss
+
+    import warnings
+
+    for _ in range(5):
+        with warnings.catch_warnings(record=True):
+            input = torch.randn(output_size, device=device, dtype=torch.float)
+            _run_step(pt_model, input)
+            _run_step(ort_model, input)
+
+            pt_params = {n: p for n, p in pt_model.named_parameters()}
+            for name, param in ort_model.named_parameters():
+                assert_values_are_close(param, pt_params[name], rtol=1e-04, atol=1e-3)
+                if param.grad is not None:
+                    assert pt_params[name].grad is not None, f"pt param.grad is None for {name}"
+                    assert_values_are_close(param.grad, pt_params[name].grad, rtol=1e-04, atol=1e-3)
+                else:
+                    assert pt_params[name].grad is None
+
+
+def test_python_op_implicit_inplace_update():
+    class SimplePassThrough(torch.autograd.Function):
+        @staticmethod
+        def forward(ctx, x):
+            print(f"SimplePassThrough forward: {x.data_ptr()}")
+            return x.detach()
+
+        @staticmethod
+        def backward(ctx, grad_output):
+            return grad_output
+
+        @staticmethod
+        def alias_input(node_proto_str: str):
+            node = onnx.NodeProto()
+            node.ParseFromString(node_proto_str)
+            non_tensor_fw_input_count = 0
+            fw_alias_map = [-1] * len(
+                node.output
+            )  # PythonOp's output will be only be tensor, the first output is the context.
+            bw_alias_map = [-1] * (
+                non_tensor_fw_input_count + len(node.input)
+            )  # PythonOpGrad's output could be tensor or non-tensor.
+
+            for i in range(len(node.output)):
+                if i != 0:  # skip the context input
+                    fw_alias_map[i] = i - 1 + non_tensor_fw_input_count
+
+            tensor_input_index = 1  # shift by 1 to skip the context input
+            for i in range(len(bw_alias_map)):
+                if i < non_tensor_fw_input_count:
+                    continue
+                bw_alias_map[i] = tensor_input_index
+                tensor_input_index += 1
+
+            return fw_alias_map, bw_alias_map
+
+    class GeluWithExternalOutput(torch.autograd.Function):
+        @staticmethod
+        def forward(ctx, x):
+            print(f"GeluWithExternalOutput forward: {x.data_ptr()}")
+            ctx.save_for_backward(x)
+            return x * 0.5 * (1.0 + torch.tanh(0.79788456 * x * (1 + 0.044715 * x * x)))
+
+        @staticmethod
+        def backward(ctx, *grad_outputs):
+            (x,) = ctx.saved_tensors
+            tanh_out = torch.tanh(0.79788456 * x * (1 + 0.044715 * x * x))
+            ff = 0.5 * x * ((1 - tanh_out * tanh_out) * (0.79788456 + 0.1070322243 * x * x)) + 0.5 * (1 + tanh_out)
+            g = ff * grad_outputs[0]
+            return g
+
+    class TestLayer(torch.nn.Module):
+        def __init__(self, output_size):
+            super().__init__()
+            self.relu = GeluWithExternalOutput.apply
+            self._output_size = output_size
+            self.bias = Parameter(torch.empty(output_size, device=torch.cuda.current_device(), dtype=torch.float))
+            self.w = Parameter(
+                torch.empty(output_size, output_size, device=torch.cuda.current_device(), dtype=torch.float)
+            )
+            with torch.no_grad():
+                self.bias.uniform_()
+                self.w.uniform_()
+
+        def forward(self, model_input):
+            # activation0 = torch.add(model_input, 0.4)
+            activation0 = torch.matmul(self.w, model_input)
+            # activation0_0 = torch.add(model_input, 0.8)
+            # activation1 = activation0.view(self._output_size, -1)
+
+            # Returned detached_bias_param Tensor shares the same storage with self.bias
+            # We are testing to make sure ORT will not erase the storage of self.bias during tear down OrtValue as
+            # the returned value of the SimplePassThrough PythonOp.
+            activation1 = SimplePassThrough.apply(activation0)
+
+            # print(f"activation0's storage: {activation0.storage().data_ptr()}, activation1's storage: {activation1.storage().data_ptr()}")
+
+            activation_0_2nd = torch.add(
+                activation0, activation0
+            )  # need another allocation, this will make ORT call torch alloc to allocate new storage, reusing activation0's buffer
+            activation_0_3nd = (
+                activation_0_2nd + model_input
+            )  # need another allocation, this will make ORT call torch alloc to allocate new storage, reusing activation0's buffer
+
+            # At this point, ORTValue should already release activation0's storage (activation1 is probabbly contains data).
+            activation2 = torch.add(activation1, activation_0_3nd)
+            relu_out = self.relu(activation2)
+            add = torch.add(relu_out, activation1)
+            # add = torch.add(add, activation0_0)
+            activation2 = torch.mul(add, self.bias)
+            activation3 = torch.matmul(self.w, activation2)
+            activation4 = torch.div(activation3, 1000)
+
+            return activation4
+
+    class TestModule(torch.nn.Module):
+        def __init__(self, output_size) -> None:
+            super().__init__()
+            self.layers = torch.nn.ModuleList([TestLayer(output_size) for i in range(6)])
+
+        def forward(self, x):
+            # ModuleList can act as an iterable, or be indexed using ints
+            for layer in self.layers:
+                x = torch.nn.functional.relu(layer(x))
+            return x
+
+    device = "cuda"
+    output_size = 1024
+    pt_model = TestModule(output_size).to(device)
+    from onnxruntime.training.ortmodule import DebugOptions, LogLevel, ORTModule
+
+    # PythonOpSchemaSupplementary.register_inplace_map(SimplePassThrough, [0])
+    ort_model = ORTModule(
+        copy.deepcopy(pt_model), DebugOptions(save_onnx=True, log_level=LogLevel.WARNING, onnx_prefix="0919")
+    )
+
+    def _run_step(model, input):
+        loss = model(input).sum()
+        loss.backward()
+        return loss
+
+    for _ in range(1):
+        input = torch.randn((output_size, output_size), device=device, dtype=torch.float).requires_grad_(True)
+        _run_step(pt_model, input)
+        _run_step(ort_model, input)
+
+        pt_params = {n: p for n, p in pt_model.named_parameters()}
+        for name, param in ort_model.named_parameters():
+            assert_values_are_close(param, pt_params[name], rtol=1e-04, atol=1e-3)
+            if param.grad is not None:
+                assert pt_params[name].grad is not None, f"pt param.grad is None for {name}"
+                assert_values_are_close(param.grad, pt_params[name].grad, rtol=1e-04, atol=1e-3)
+            else:
+                assert pt_params[name].grad is None
+
+
+test_python_op_implicit_inplace_update()

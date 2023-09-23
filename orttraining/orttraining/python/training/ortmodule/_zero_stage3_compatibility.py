@@ -3,15 +3,20 @@
 # Licensed under the MIT License.
 # --------------------------------------------------------------------------
 
+
 from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 from onnx import ModelProto, NodeProto, TensorProto, ValueInfoProto, helper
 
-from onnxruntime.capi._pybind_state import register_torch_autograd_function
+from onnxruntime.capi._pybind_state import (
+    register_input_alias_function,
+    register_shape_inference_function,
+    register_torch_autograd_function,
+)
 from onnxruntime.training.utils import pytorch_dtype_to_onnx
 
-from ._custom_autograd_function_exporter import PythonOpShapeInferStore
+from ._custom_autograd_function_exporter import register_custom_function_schema_supplementary
 from ._utils import get_fully_qualified_class_name
 
 STAGE3_PULL_WEIGHT_TRIGGER_NAME = "pull_weight_trigger"
@@ -34,6 +39,8 @@ def post_processing_enable_zero_stage3_compat(
 
     # Register symbolic shape inference functions for PythonOp used in DeepSpeed ZeRO stage3.
     _register_symbolic_shape_infer_functions()
+
+    _register_alias_input_functions()
 
     # Create weight retrieving function using zero_stage3_named_params.
     func_full_qual_name = _create_weight_retrieval_function(zero_stage3_named_params)
@@ -189,7 +196,8 @@ def _create_weight_retrieval_function(
 
     func_full_qual_name = get_fully_qualified_class_name(WeightRetrievalFunction)
     register_torch_autograd_function(func_full_qual_name, WeightRetrievalFunction)
-    PythonOpShapeInferStore.register(WeightRetrievalFunction)
+
+    register_custom_function_schema_supplementary(WeightRetrievalFunction)
 
     return func_full_qual_name
 
@@ -205,10 +213,10 @@ def _register_symbolic_shape_infer_functions():
     ) -> Tuple[List[Optional[List[Union[int, str]]]], List[torch.onnx.TensorProtoDataType]]:
         return tensor_input_shapes, tensor_input_dtypes
 
-    PythonOpShapeInferStore.register_func(
+    register_shape_inference_function(
         "deepspeed.runtime.zero.parameter_offload.PreBackwardFunction", _simple_pass_through_infer_shape
     )
-    PythonOpShapeInferStore.register_func(
+    register_shape_inference_function(
         "deepspeed.runtime.zero.parameter_offload.PostBackwardFunction", _simple_pass_through_infer_shape
     )
 
@@ -224,9 +232,36 @@ def _register_symbolic_shape_infer_functions():
         output_shape[-1] = shape2[-2]
         return [output_shape], [tensor_input_dtypes[0]]
 
-    PythonOpShapeInferStore.register_func(
-        "deepspeed.runtime.zero.linear.LinearFunctionForZeroStage3", _linear_infer_shape
-    )
+    register_shape_inference_function("deepspeed.runtime.zero.linear.LinearFunctionForZeroStage3", _linear_infer_shape)
+
+
+def _register_alias_input_functions():
+    """This function is used to register symbolic shape inference functions for PythonOp used in
+    DeepSpeed ZeRO stage3."""
+
+    def _alias_input(node_proto_str: str):
+        node: NodeProto = NodeProto()
+        node.ParseFromString(node_proto_str)
+        non_tensor_fw_input_count = 2
+
+        fw_output_count = len(node.output) - 1  # exclude the first output appended in ONNX
+        fw_alias_map = [-1] * fw_output_count
+        bw_alias_map = [-1] * (non_tensor_fw_input_count + len(node.input))
+
+        for i in range(fw_output_count):
+            fw_alias_map[i] = i + non_tensor_fw_input_count
+
+        tensor_input_index = 0
+        for i in range(len(bw_alias_map)):
+            if i < non_tensor_fw_input_count:
+                continue
+            bw_alias_map[i] = tensor_input_index
+            tensor_input_index += 1
+
+        return fw_alias_map, bw_alias_map
+
+    register_input_alias_function("deepspeed.runtime.zero.parameter_offload.PreBackwardFunction", _alias_input)
+    register_input_alias_function("deepspeed.runtime.zero.parameter_offload.PostBackwardFunction", _alias_input)
 
 
 def _create_weight_retrieval_pythonop(
@@ -234,16 +269,16 @@ def _create_weight_retrieval_pythonop(
     func_full_qual_name: str,
     input_name: str,
     output_names: List[str],
-    STAGE3_PULL_WEIGHT_TRIGGER_OUTPUT_DTYPE,
-    STAGE3_PULL_WEIGHT_TRIGGER_OUTPUT_SHAPE: List[int],
+    pull_weight_trigger_output_dtype: int,
+    pull_weight_trigger_output_shape: List[int],
 ) -> Tuple[ValueInfoProto, NodeProto]:
     """This function is used to create a weight retrieving PythonOp."""
     offload_param_count = 0 if zero_stage3_named_params is None else len(zero_stage3_named_params)
     new_input = helper.make_tensor_value_info(
-        input_name, STAGE3_PULL_WEIGHT_TRIGGER_OUTPUT_DTYPE, STAGE3_PULL_WEIGHT_TRIGGER_OUTPUT_SHAPE
+        input_name, pull_weight_trigger_output_dtype, pull_weight_trigger_output_shape
     )
-    output_rank_for_pull_weight_trigger = len(STAGE3_PULL_WEIGHT_TRIGGER_OUTPUT_SHAPE)
-    output_dtype_for_pull_weight_trigger = STAGE3_PULL_WEIGHT_TRIGGER_OUTPUT_DTYPE
+    output_rank_for_pull_weight_trigger = len(pull_weight_trigger_output_shape)
+    output_dtype_for_pull_weight_trigger = pull_weight_trigger_output_dtype
     output_tensor_ranks = [
         output_rank_for_pull_weight_trigger,
     ] * offload_param_count
@@ -253,10 +288,9 @@ def _create_weight_retrieval_pythonop(
 
     node_attributes = {
         "comment": "",
-        "inplace": 0,
         "input_convention": "d",
-        "input_tensor_ranks": [len(STAGE3_PULL_WEIGHT_TRIGGER_OUTPUT_SHAPE)],
-        "input_tensor_types": [STAGE3_PULL_WEIGHT_TRIGGER_OUTPUT_DTYPE],
+        "input_tensor_ranks": [len(pull_weight_trigger_output_shape)],
+        "input_tensor_types": [pull_weight_trigger_output_dtype],
         "output_tensor_ranks": output_tensor_ranks,
         "output_tensor_types": output_tensor_types,
         "training_mode": 1,

@@ -81,6 +81,7 @@ Status Attention<T>::ComputeInternal(OpKernelContext* context) const {
   const Tensor* past = context->Input<Tensor>(kPastInputIndex);
   const Tensor* relative_position_bias = context->Input<Tensor>(5);
   const Tensor* past_seq_len = context->Input<Tensor>(kPastSequenceLengthInputIndex);
+  const Tensor* positional_embedding = context->Input<Tensor>(7);
 
   auto& device_prop = GetDeviceProp();
   AttentionParameters parameters;
@@ -93,6 +94,7 @@ Status Attention<T>::ComputeInternal(OpKernelContext* context) const {
                                   mask_index,
                                   past,
                                   relative_position_bias,
+                                  positional_embedding,
                                   &parameters,
                                   device_prop.maxThreadsPerBlock,
                                   past_seq_len));

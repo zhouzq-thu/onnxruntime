@@ -237,6 +237,39 @@ class FusionEmbedLayerNoMask(Fusion):
 
         return False
 
+    def match_position_embedding_layoutxlm(self, position_embedding_gather, input_ids, output_name_to_node):
+        """  Match position embedding path from input_ids to Gather for BERT.
+
+        BERT Embedding Layer Pattern:
+                                (input_ids)
+                                   /   |
+                                 /   Shape
+                                /      |
+                              /        |
+                             /         |
+                            /          |
+                           /           |
+                        Gather         |
+                           \\          |       (position_ids)
+                            \\   ConstantOfShape   /
+                              \\    /           /
+                                Add       Gather
+                                   \\     /
+                                      Add
+                                       |
+                                LayerNormalization
+        """
+        path = self.model.match_parent_path(
+            position_embedding_gather,
+            ["ConstantOfShape", "Shape"],
+            [1, 0],
+            output_name_to_node,
+        )
+        if path is None:
+            return False
+
+        return input_ids == path[1].input[0]
+
     def match_position_embedding_bert(self, position_embedding_gather, input_ids, output_name_to_node):
         """  Match position embedding path from input_ids to Gather for BERT.
 
@@ -311,6 +344,9 @@ class FusionEmbedLayerNoMask(Fusion):
 
     def match_position_embedding(self, position_embedding_gather, input_ids, output_name_to_node):
         if self.match_position_embedding_bert(position_embedding_gather, input_ids, output_name_to_node):
+            return True
+
+        if self.match_position_embedding_layoutxlm(position_embedding_gather, input_ids, output_name_to_node):
             return True
 
         # TODO: Support roberta (position starts from 2 instead of 0) in EmbedLayerNormalization kernel
@@ -658,43 +694,46 @@ class FusionEmbedLayerNoMask(Fusion):
             output_name_to_node (Dict[str, List[NodeProto]]): map from output name to nodes
         """
 
-        add_2_gather = self.model.match_parent_path(add_before_layernorm, ["Add"], [0])
+        add_2_gather = self.model.match_parent_path(add_before_layernorm, ["Add", "Add"], [0, 0])
         if add_2_gather is None:
             return False
 
-        two_gather = self.match_two_gather(add_2_gather[0])
+        two_gather = self.match_two_gather(add_2_gather[1])
         if two_gather is None:
             return False
 
-        word_embedding_gather, segment_embedding_gather = two_gather
+        word_embedding_gather, token_embedding_gather = two_gather
 
         input_ids = word_embedding_gather.input[1]
 
         if not self.check_attention_subgraph(layernorm, input_name_to_nodes, is_distil_bert=False):
             return False
 
-        position_embedding_path = self.model.match_parent_path(add_before_layernorm, ["Gather"], [1])
+        position_embedding_path = self.model.match_parent_path(add_before_layernorm, ["Add", "Gather"], [0, 1])
         if position_embedding_path is None:
             return False
 
-        position_embedding_gather = position_embedding_path[0]
+        position_embedding_gather = position_embedding_path[1]
         if not self.match_position_embedding(position_embedding_gather, input_ids, output_name_to_node):
-            if not self.match_position_embedding(segment_embedding_gather, input_ids, output_name_to_node):
+            if not self.match_position_embedding(token_embedding_gather, input_ids, output_name_to_node):
                 return False
             # position and segment are switched
-            temp = segment_embedding_gather
-            segment_embedding_gather = position_embedding_gather
-            position_embedding_gather = temp
+            # temp = token_embedding_gather
+            # token_embedding_gather = position_embedding_gather
+            # position_embedding_gather = temp
 
-        if not self.check_embedding(word_embedding_gather, segment_embedding_gather, position_embedding_gather):
+        if not self.check_embedding(word_embedding_gather, token_embedding_gather, position_embedding_gather):
             return False
+
+        position_ids = position_embedding_gather.input[1]
 
         embed_node = self.create_fused_node(
             input_ids,
             layernorm,
             word_embedding_gather,
             position_embedding_gather,
-            segment_embedding_gather,
+            token_embedding_gather,
+            position_ids
         )
         self.finish_fusion(layernorm, embed_node)
         return True

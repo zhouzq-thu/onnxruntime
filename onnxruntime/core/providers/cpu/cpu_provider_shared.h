@@ -146,6 +146,7 @@ struct ProviderHostCPU {
                                             const Tensor*& mask_index,
                                             const Tensor* past,
                                             const Tensor* relative_position_bias,
+                                            const Tensor* positional_embedding,
                                             void* parameters,
                                             const int max_threads_per_block,
                                             const Tensor* past_seq_len) = 0;

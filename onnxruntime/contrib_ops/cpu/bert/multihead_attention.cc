@@ -337,7 +337,7 @@ Status MultiHeadAttention<T>::Compute(OpKernelContext* context) const {
                           key_padding_mask, nullptr /* past */, nullptr /* past_k */, nullptr /* past_v */,
                           output, present_k, present_v,
                           batch_size, q_sequence_length, kv_sequence_length,
-                          qk_head_size, v_head_size, v_hidden_size, extra_add_qk, context);
+                          qk_head_size, v_head_size, v_hidden_size, extra_add_qk, nullptr /* positional embedding */, context);
   }
 
   OrtValue K;
@@ -351,7 +351,7 @@ Status MultiHeadAttention<T>::Compute(OpKernelContext* context) const {
   return ApplyAttention(Q.GetMutable<Tensor>()->MutableData<T>(), K.GetMutable<Tensor>()->MutableData<T>(), V.GetMutable<Tensor>()->MutableData<T>(),
                         key_padding_mask, nullptr /* past */, past_key, past_value, output, present_k, present_v,
                         batch_size, q_sequence_length, kv_sequence_length,
-                        qk_head_size, v_head_size, v_hidden_size, extra_add_qk, context);
+                        qk_head_size, v_head_size, v_hidden_size, extra_add_qk, nullptr /* positional embedding */, context);
 }
 }  // namespace contrib
 }  // namespace onnxruntime

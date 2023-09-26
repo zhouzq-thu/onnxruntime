@@ -36,6 +36,7 @@ class AttentionCPUBase : public AttentionBase {
                         int v_head_size,                       // head size of V (H_v)
                         int v_hidden_size,                     // hidden size of V (D_v)
                         const Tensor* relative_position_bias,  // bias addition in QK. Its size is BxNxSxT
+                        const Tensor* positional_embedding,    // positional embedding addition in QK
                         OpKernelContext* context) const {
     AllocatorPtr allocator;
     ORT_RETURN_IF_ERROR(context->GetTempSpaceAllocator(&allocator));
@@ -84,11 +85,16 @@ class AttentionCPUBase : public AttentionBase {
       relative_position_bias_data = relative_position_bias->Data<T>();
     }
 
+    const T* positional_embedding_data = nullptr;
+    if (positional_embedding != nullptr) {
+      positional_embedding_data = positional_embedding->Data<T>();
+    }
+
     ComputeAttentionProbs<T>(static_cast<T*>(attention_probs), Q, K,
                              mask_index_data, mask_index_dims, static_cast<T*>(mask_data), causal,
                              batch_size, sequence_length, kv_sequence_length, past_sequence_length,
                              qk_head_size == 0 ? v_head_size : qk_head_size, past_data, past_key_data,
-                             present_data, present_key_data, tp, relative_position_bias_data);
+                             present_data, present_key_data, tp, relative_position_bias_data, positional_embedding_data);
 
     // Compute the attentionScore * Value: out_tmp(B, N, S, H_v) = attention_probs(B, N, S, T) x V(B, N, T, H_v)
     auto out_tmp_data =
@@ -127,7 +133,8 @@ class AttentionCPUBase : public AttentionBase {
                              T* present,                                // present state
                              T* present_key,                            // present key only (if not using present state)
                              ThreadPool* tp,                            // thread pool
-                             const T* relative_position_bias_data       // bias addition matrix with shape BxNxSxT
+                             const T* relative_position_bias_data,      // bias addition matrix with shape BxNxSxT
+                             const T* positional_embedding_data         // positional embedding addition to QK
   ) const {
     const int total_sequence_length = past_sequence_length + kv_sequence_length;               // T = P + L
     const size_t past_chunk_length = static_cast<size_t>(past_sequence_length) * head_size;    // P x H
@@ -194,6 +201,11 @@ class AttentionCPUBase : public AttentionBase {
           if (relative_position_bias_data != nullptr) {
             for (int j = 0; j < sequence_length * total_sequence_length; j++) {
               output[j] += relative_position_bias_data[output_offset + j];
+            }
+          }
+          if (positional_embedding_data != nullptr) {
+            for (int j = 0; j < sequence_length * total_sequence_length; j++) {
+              output[j] += positional_embedding_data[output_offset + j];
             }
           }
         }

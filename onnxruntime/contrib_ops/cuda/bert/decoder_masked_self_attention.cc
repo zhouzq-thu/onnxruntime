@@ -58,6 +58,7 @@ Status DecoderMaskedSelfAttention<T1, T2>::ComputeInternal(OpKernelContext* cont
                                   mask_index,
                                   past,
                                   relative_position_bias,
+                                  nullptr,
                                   &parameters,
                                   device_prop.maxThreadsPerBlock,
                                   past_seq_len));

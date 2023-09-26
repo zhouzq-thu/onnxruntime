@@ -13,6 +13,7 @@ Status AttentionBase::CheckInputs(const TensorShape& input_shape,
                                   const Tensor*& mask_index,
                                   const Tensor* past,
                                   const Tensor* relative_position_bias,
+                                  const Tensor* positional_embedding,
                                   void* parameters,
                                   const Tensor* past_seq_len) const {
   // Abbreviation and Meanings:
@@ -226,6 +227,15 @@ Status AttentionBase::CheckInputs(const TensorShape& input_shape,
     }
   }
 
+  if (positional_embedding != nullptr) {
+    const auto& positional_embedding_dims = positional_embedding->Shape().GetDims();
+    if (positional_embedding_dims.size() != 4) {
+      return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT,
+                             "Input 'positional_embedding_dims' is expected to have 4 dimensions, got ",
+                             positional_embedding_dims.size());
+    }
+  }
+
   if (past != nullptr && past_present_share_buffer_) {
     if (max_sequence_length <= 0) {
       max_sequence_length = past->Shape().GetDims()[3];
@@ -330,6 +340,7 @@ Status AttentionBase::CheckInputs(const TensorShape& input_shape,
                                   const Tensor*& mask_index,
                                   const Tensor* past,
                                   const Tensor* relative_position_bias,
+                                  const Tensor* positional_embedding,
                                   void* parameters,
                                   const int max_threads_per_block,
                                   const Tensor* past_seq_len) const {
@@ -337,7 +348,7 @@ Status AttentionBase::CheckInputs(const TensorShape& input_shape,
     return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT, "num_heads should be no larger than ", max_threads_per_block);
   }
 
-  return CheckInputs(input_shape, weights_shape, bias_shape, mask_index, past, relative_position_bias, parameters, past_seq_len);
+  return CheckInputs(input_shape, weights_shape, bias_shape, mask_index, past, relative_position_bias, positional_embedding, parameters, past_seq_len);
 }
 
 Tensor* AttentionBase::GetPresent(OpKernelContext* context,

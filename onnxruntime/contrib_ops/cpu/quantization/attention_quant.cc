@@ -161,6 +161,7 @@ Status QAttention<T>::Compute(OpKernelContext* context) const {
                                                  mask_index,
                                                  past_tensor,
                                                  nullptr,  // relative_position_bias
+                                                 nullptr,  // positional embedding
                                                  nullptr   // parameters
                                                  ));
 
@@ -291,7 +292,7 @@ Status QAttention<T>::Compute(OpKernelContext* context) const {
   return ApplyAttention(Q, K, V, mask_index, past_tensor, nullptr /* past_key */, nullptr /* past_value*/,
                         output, nullptr /* present_key */, nullptr /* present_value */,
                         batch_size, sequence_length, sequence_length,
-                        head_size, head_size, hidden_size, nullptr /* rel_pos_bias */, context);
+                        head_size, head_size, hidden_size, nullptr /* rel_pos_bias */, nullptr /* positional embedding */, context);
 }
 
 }  // namespace contrib

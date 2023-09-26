@@ -200,6 +200,7 @@ Status QOrderedAttention::ComputeInternal(OpKernelContext* context) const {
                                   mask_index,
                                   nullptr,  // past
                                   nullptr,  // relative_position_bias
+                                  nullptr,  // positional_embedding
                                   nullptr,  // parameters
                                   device_prop.maxThreadsPerBlock));
 

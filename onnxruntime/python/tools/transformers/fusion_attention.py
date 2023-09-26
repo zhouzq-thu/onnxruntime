@@ -27,6 +27,7 @@ class AttentionMask:
         # A lookup table with mask input as key, and cast (to int32) output as value
         self.mask_casted = {}
         self.utils = FusionUtils(model)
+        self.casted_attention_mask = {}  # map from name of attention mask to the name that casted to int32
         self.mask_format = AttentionMaskFormat.MaskIndexEnd
         self.opset_version = model.get_opset_version()
 
@@ -76,7 +77,7 @@ class AttentionMask:
             mask_index_node.attribute.extend([helper.make_attribute("axes", [1]), helper.make_attribute("keepdims", 0)])
         else:
             # ReduceSum-13: axes is moved from attribute to input
-            axes_name = "ort_const_1_reduce_sum_axes"
+            axes_name = "ortshared_7_1_1_1_token_193"
             if self.model.get_initializer(axes_name) is None:
                 self.add_initializer(name=axes_name, data_type=TensorProto.INT64, dims=[1], vals=[1], raw=False)
             mask_index_node = helper.make_node(
@@ -91,6 +92,17 @@ class AttentionMask:
 
         self.mask_indice[input] = output_name
         return output_name
+
+    def cast_attention_mask(self, input_name):
+        if input_name in self.casted_attention_mask:
+            attention_mask_input_name = self.casted_attention_mask[input_name]
+        elif self.model.find_graph_input(input_name):
+            casted, attention_mask_input_name = self.utils.cast_graph_input_to_int32(input_name)
+            self.casted_attention_mask[input_name] = attention_mask_input_name
+        else:
+            attention_mask_input_name, cast_node = self.utils.cast_input_to_int32(input_name)
+            self.casted_attention_mask[input_name] = attention_mask_input_name
+        return attention_mask_input_name
 
 
 class FusionAttention(Fusion):
@@ -696,6 +708,7 @@ class FusionAttention(Fusion):
         past_v: str = "",
         present_k: str = "",
         present_v: str = "",
+        positional_embed: str = "",
         scale: Optional[float] = None,
         causal: bool = False,
     ) -> Union[NodeProto, None]:
@@ -866,27 +879,34 @@ class FusionAttention(Fusion):
             if past_exists:
                 past_kv = self.concat_kv(past_k, past_v)
                 attention_inputs.append(past_kv)
+            else:
+                attention_inputs.append("")
 
-            if add_qk_str:
-                # Convert 4d mask from (B,1,M,M) to (B,N,M,M)
-                # B = batch size, M = max sequence length, N = num heads
-                concat_node_name = self.model.create_node_name("Concat")
-                mask_output_name = add_qk_str + "_mask"
-                concat_add_qk_fp32 = helper.make_node(
-                    "Concat",
-                    inputs=[add_qk_str for _ in range(num_heads)],
-                    outputs=[mask_output_name],
-                    name=concat_node_name,
-                    axis=1,
-                )
-                # Add new nodes to graph
-                self.nodes_to_add.append(concat_add_qk_fp32)
-                self.node_name_to_graph_name[concat_node_name] = self.this_graph_name
+            attention_inputs.extend([add_qk_str.input[1], "", positional_embed.input[1]])
 
-                # Add attention mask to attention node
-                if not past_exists:
-                    attention_inputs.append("")
-                attention_inputs.append(mask_output_name)
+            # if add_qk_str:
+            #     # Convert 4d mask from (B,1,M,M) to (B,N,M,M)
+            #     # B = batch size, M = max sequence length, N = num heads
+            #     concat_node_name = self.model.create_node_name("Concat")
+            #     mask_output_name = add_qk_str + "_mask"
+            #     concat_add_qk_fp32 = helper.make_node(
+            #         "Concat",
+            #         inputs=[add_qk_str for _ in range(num_heads)],
+            #         outputs=[mask_output_name],
+            #         name=concat_node_name,
+            #         axis=1,
+            #     )
+            #     # Add new nodes to graph
+            #     self.nodes_to_add.append(concat_add_qk_fp32)
+            #     self.node_name_to_graph_name[concat_node_name] = self.this_graph_name
+
+            #     # Add attention mask to attention node
+            #     if not past_exists:
+            #         attention_inputs.append("")
+            #     attention_inputs.append(mask_output_name)
+
+            # print("Add qk str = ", add_qk_str)
+            # attention_inputs.append(add_qk_str.name)
 
             attention_outputs = [output]
             if present_k and present_v:
@@ -1020,12 +1040,14 @@ class FusionAttention(Fusion):
         is_distill = False
         is_distill_add = False
         is_no_mask_attention = False
+        has_rel_pos_bias = False
         qk_paths = {
             "path1": (["Softmax", "Add", "Div", "MatMul"], [0, 0, None, 0]),
             "path2": (["Softmax", "Add", "Mul", "MatMul"], [0, 0, None, 0]),
             "path3": (["Softmax", "Where", "MatMul", "Div"], [0, 0, 2, 0]),
             "path4": (["Softmax", "Add", "Where", "MatMul"], [0, 0, 0, 2]),
             "path5": (["Softmax", "Div", "MatMul"], [0, 0, 0]),
+            "path6": (["Softmax", "Add", "Div", "Add", "Add", "MatMul"], [0, 0, None, 0, 0, 0]),
         }
 
         qk_nodes = None
@@ -1039,6 +1061,8 @@ class FusionAttention(Fusion):
                 is_distill_add = True
             if k == "path5":
                 is_no_mask_attention = True
+            if k == "path6":
+                has_rel_pos_bias = True
             break
 
         if qk_nodes is None:
@@ -1054,6 +1078,8 @@ class FusionAttention(Fusion):
             (_, add_qk, where_qk, matmul_qk) = qk_nodes
         elif is_no_mask_attention:
             (_, _, matmul_qk) = qk_nodes
+        elif has_rel_pos_bias:
+            (_, add_qk, div_qk, add_emb_qk, add_rel_bias_qk, matmul_qk) = qk_nodes
         else:
             (_, add_qk, _, matmul_qk) = qk_nodes
 
@@ -1113,6 +1139,9 @@ class FusionAttention(Fusion):
                     return
         elif is_no_mask_attention:
             pass
+        elif has_rel_pos_bias:
+            mask_nodes = self.model.match_parent_path(
+                add_qk, ["Mul", "Sub", "Cast", "Unsqueeze", "Unsqueeze"], [None, 0, 1, 0, 0],)
         else:
             _, mask_nodes, _ = self.model.match_parent_paths(
                 add_qk,
@@ -1135,7 +1164,11 @@ class FusionAttention(Fusion):
                 self.mask_filter_value = mul_val
 
         if matmul_v.input[0] == root_input and matmul_q.input[0] == root_input and matmul_k.input[0] == root_input:
-            mask_index = self.attention_mask.process_mask(mask_nodes[-1].input[0]) if not is_no_mask_attention else None
+            attention_mask_input_name = ""
+            if mask_nodes is not None:
+                input_name = mask_nodes[-1].input[0]
+                attention_mask_input_name = self.attention_mask.cast_attention_mask(input_name)
+            # mask_index = self.attention_mask.process_mask(mask_nodes[-1].input[1]) if not is_no_mask_attention else None
 
             attention_last_node = reshape_qkv if einsum_node is None else transpose_qkv
 
@@ -1150,7 +1183,7 @@ class FusionAttention(Fusion):
             # number of heads are same for all the paths, hence to create attention node, we pass the q_num_heads
             # the input_hidden_size represents the input hidden size, this is used as needed but hidden sizes for Q, K are extracted appropriately
             new_node = self.create_attention_node(
-                mask_index,
+                attention_mask_input_name,
                 matmul_q,
                 matmul_k,
                 matmul_v,
@@ -1161,7 +1194,8 @@ class FusionAttention(Fusion):
                 q_hidden_size,
                 root_input,
                 attention_last_node.output[0],
-                add_qk_str,
+                add_rel_bias_qk,
+                positional_embed=add_emb_qk
             )
             if new_node is None:
                 return

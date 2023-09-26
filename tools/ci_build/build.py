@@ -1802,18 +1802,20 @@ def run_onnxruntime_tests(args, source_dir, ctest_path, build_dir, configs):
         if len(dll_path_list) > 0:
             dll_path = os.pathsep.join(dll_path_list)
 
-        if not ctest_path and not is_windows():
-            executables = ["onnxruntime_test_all", "onnxruntime_mlas_test"]
-            if args.build_shared_lib:
-                executables.append("onnxruntime_shared_lib_test")
-                executables.append("onnxruntime_global_thread_pools_test")
-                executables.append("onnxruntime_customopregistration_test")
-            for exe in executables:
-                test_output = f"--gtest_output=xml:{cwd}/{exe}.{config}.results.xml"
-                run_subprocess(["python3", os.path.join(source_dir, "tools/python/gtest_parallel.py"), os.path.join(cwd, exe), test_output], cwd=cwd, dll_path=dll_path)
-        else:
-            ctest_cmd = ["python3", os.path.join(source_dir, "tools/python/gtest_parallel.py"), ctest_path, "--build-config", config, "--verbose", "--timeout", args.test_all_timeout]
-            run_subprocess(ctest_cmd, cwd=cwd, dll_path=dll_path)
+        #if not ctest_path and not is_windows():
+        executables = ["onnxruntime_test_all", "onnxruntime_mlas_test"]
+        if args.build_shared_lib:
+            executables.append("onnxruntime_shared_lib_test")
+            executables.append("onnxruntime_global_thread_pools_test")
+            executables.append("onnxruntime_customopregistration_test")
+        for exe in executables:
+            test_output = f"--gtest_output=xml:{cwd}/{exe}.{config}.results.xml"
+            if is_windows():
+                exe += ".exe"
+            run_subprocess(["python3", os.path.join(source_dir, "gtest_parallel.py"), os.path.join(cwd, exe), test_output], cwd=cwd, dll_path=dll_path)
+        #else:
+        #    ctest_cmd = [ctest_path, "--build-config", config, "--verbose", "--timeout", args.test_all_timeout]
+        #    run_subprocess(ctest_cmd, cwd=cwd, dll_path=dll_path)
 
         if args.enable_pybind:
             python_path = None

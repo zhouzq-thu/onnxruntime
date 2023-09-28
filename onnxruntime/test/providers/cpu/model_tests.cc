@@ -1140,8 +1140,8 @@ static ORT_STRING_VIEW provider_name_dml = ORT_TSTR("dml");
     ORT_STRING_VIEW model_zoo_path = ORT_TSTR("../models/zoo");
 #endif
     for (auto p : kvp.second) {
-      paths.push_back(ConcatPathComponent(model_test_root_path, p));
-      paths.push_back(ConcatPathComponent(model_zoo_path, p));
+      // paths.push_back(ConcatPathComponent(model_test_root_path, p));
+      // paths.push_back(ConcatPathComponent(model_zoo_path, p));
     }
 #endif
 

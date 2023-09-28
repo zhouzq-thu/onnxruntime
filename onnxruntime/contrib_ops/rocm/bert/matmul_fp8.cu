@@ -13,9 +13,9 @@ namespace rocm {
 using namespace onnxruntime::rocm;
 using namespace onnxruntime::rocm::tunable::blas;
 
-class F8MatMul final : public RocmKernel {
+class Fp8MatMul final : public RocmKernel {
  public:
-  F8MatMul(const OpKernelInfo& info) : RocmKernel(info) {
+  Fp8MatMul(const OpKernelInfo& info) : RocmKernel(info) {
     info.GetAttrOrDefault<float>("scale_a", &scale_a_, 1.0f);
     info.GetAttrOrDefault<float>("scale_b", &scale_b_, 1.0f);
   }
@@ -31,7 +31,7 @@ class F8MatMul final : public RocmKernel {
   float scale_b_;
 };
 
-Status F8MatMul::ComputeInternal(OpKernelContext* ctx) const {
+Status Fp8MatMul::ComputeInternal(OpKernelContext* ctx) const {
   const Tensor* A = ctx->Input<Tensor>(0);
   const Tensor* B = ctx->Input<Tensor>(1);
   auto a_shape = A->Shape();
@@ -52,14 +52,14 @@ Status F8MatMul::ComputeInternal(OpKernelContext* ctx) const {
   return ORT_MAKE_STATUS(ONNXRUNTIME, FAIL, "Unhandled type combination of F8 GEMM");
 }
 
-Status F8MatMul::ComputeFp8Fp16Fp16(OpKernelContext* ctx, const Tensor* A, const Tensor* B, Tensor* C) const {
+Status Fp8MatMul::ComputeFp8Fp16Fp16(OpKernelContext* ctx, const Tensor* A, const Tensor* B, Tensor* C) const {
   ORT_ENFORCE(A->IsDataType<Float8E4M3FNUZ>() && B->IsDataType<MLFloat16>());
   onnxruntime::rocm::tunable::blas::FP8GemmParams<Float8E4M3FNUZ, MLFloat16, MLFloat16> params{};
 
   ORT_ENFORCE(false, "A @ B for weight @ input is not implemented");
 }
 
-Status F8MatMul::ComputeFp16Fp8Fp16(OpKernelContext* ctx, const Tensor* A, const Tensor* B, Tensor* C) const {
+Status Fp8MatMul::ComputeFp16Fp8Fp16(OpKernelContext* ctx, const Tensor* A, const Tensor* B, Tensor* C) const {
   ORT_ENFORCE(A->IsDataType<MLFloat16>() && B->IsDataType<Float8E4M3FNUZ>());
 
   auto a_shape = A->Shape();
@@ -94,6 +94,17 @@ Status F8MatMul::ComputeFp16Fp8Fp16(OpKernelContext* ctx, const Tensor* A, const
 
   return (*tunable_op_fp16_fp8_fp16_)(&params);
 }
+
+ONNX_OPERATOR_KERNEL_EX(
+    Fp8MatMul,
+    kMSDomain,
+    1,
+    kRocmExecutionProvider,
+    (*KernelDefBuilder::Create())
+        .TypeConstraint("T1", BuildKernelDefConstraints<MLFloat16, Float8E4M3FNUZ>())
+        .TypeConstraint("T2", BuildKernelDefConstraints<MLFloat16, Float8E4M3FNUZ>())
+        .TypeConstraint("T", BuildKernelDefConstraints<MLFloat16>()),
+    Fp8MatMul);
 
 }  // namespace rocm
 }  // namespace contrib

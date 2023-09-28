@@ -47,7 +47,7 @@ def setup_session_option(args, local_rank):
         ort.set_default_logger_verbosity(1000)  # verbose
 
     if args.save_opt:
-        so.optimized_model_filepath = f"ort-opted-rank-{local_rank}-{args.output_name}.onnx"
+        so.optimized_model_filepath = f"./ort-opted-rank-{local_rank}-{args.output_name}.onnx"
 
     if args.profile and local_rank == 0:
         so.enable_profiling = args.profile
@@ -415,6 +415,9 @@ def get_args():
     ort_group.add_argument("--tuning", action="store_true", help="enable tuning for TunableOp")
     ort_group.add_argument("--provider", type=str, default="rocm", help="specify execution provider")
     ort_group.add_argument("-v", "--verbose", action="store_true", help="enable verbose logging")
+    ort_group.add_argument("--decoder-model", "-dm", type=str, default=None)
+    ort_group.add_argument("--decoder-past-model", "-dpm", type=str, default=None)
+    ort_group.add_argument("--merged-model", "-mm", type=str, default=None)
 
     torch_group = parser.add_argument_group("PyTorch specific arguments")
 
@@ -435,6 +438,13 @@ if __name__ == "__main__":
         DECODER_MODEL = f"opt_{DECODER_MODEL}"
         DECODER_PAST_MODEL = f"opt_{DECODER_PAST_MODEL}"
         MERGED_MODEL = f"opt_{MERGED_MODEL}"
+
+    if args.decoder_model:
+        DECODER_MODEL = args.decoder_model
+    if args.decoder_past_model:
+        DECODER_PAST_MODEL = args.decoder_past_model
+    if args.merged_model:
+        MERGED_MODEL = args.merged_model
 
     if args.cugraph and not args.custom_gen:
         print_out("WARNING: CUDAGraph enabled but custom_gen is not, setting it to True")

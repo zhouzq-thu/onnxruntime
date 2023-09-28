@@ -1969,14 +1969,14 @@ ONNX_MS_OPERATOR_SET_SCHEMA(SparseToDenseMatMul, 1,
                                   sparseCompatibleMatmulShapeInference(ctx, 0, 1);
                                 }));
 
-ONNX_MS_OPERATOR_SET_SCHEMA(F8MatMul, 1,
+ONNX_MS_OPERATOR_SET_SCHEMA(Fp8MatMul, 1,
                             OpSchema()
                                 // Y = maybe_cvt_fp8_to_f16(scale_a * A) @ maybe_cvt_fp8_to_f16(scale_b * B)
                                 .Input(0, "A", "N-dimensional matrix A", "T1")
                                 .Input(1, "B", "N-dimensional matrix B", "T2")
                                 .Attr("scale_a", "scale of A", AttributeProto::FLOAT, 1.0f)
                                 .Attr("scale_b", "scale of B", AttributeProto::FLOAT, 1.0f)
-                                .Output(0, "Y", "Matrix multiply results", "T3")
+                                .Output(0, "Y", "Matrix multiply results", "T")
                                 .TypeConstraint("T1", {"tensor(float16)", "tensor(float8e4m3fnuz)"}, "Constrain input and output types to float tensors.")
                                 .TypeConstraint("T2", {"tensor(float16)", "tensor(float8e4m3fnuz)"}, "Constrain input and output types to float tensors.")
                                 .TypeConstraint("T", {"tensor(float16)"}, "Constrain output types to float16.")

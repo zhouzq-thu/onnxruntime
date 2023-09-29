@@ -1811,11 +1811,13 @@ def run_onnxruntime_tests(args, source_dir, ctest_path, build_dir, configs):
             for exe in executables:
                 test_output = f"--gtest_output=xml:{cwd}/{exe}.{config}.results.xml"
                 run_subprocess([os.path.join(cwd, exe), test_output], cwd=cwd, dll_path=dll_path)
-            models_dir = os.path.join(os.path.dirname(cwd), "models")
-            run_subprocess([os.path.join(cwd, "onnx_test_runner"), "-j 2", models_dir], cwd=cwd, dll_path=dll_path)
+            # models_dir = os.path.join(os.path.dirname(cwd), "models")
+            # run_subprocess([os.path.join(cwd, "onnx_test_runner"), "-j 2", models_dir], cwd=cwd, dll_path=dll_path)
         else:
             ctest_cmd = [ctest_path, "--build-config", config, "--verbose", "--timeout", args.test_all_timeout]
             run_subprocess(ctest_cmd, cwd=cwd, dll_path=dll_path)
+            models_dir = os.path.join(os.path.dirname(cwd), "models")
+            run_subprocess([os.path.join(cwd, "onnx_test_runner"), "-j 2", models_dir], cwd=cwd, dll_path=dll_path)
 
         if args.enable_pybind:
             python_path = None

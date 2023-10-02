@@ -234,10 +234,6 @@ class TensorrtExecutionProvider : public IExecutionProvider {
   bool detailed_build_log_ = false;
   bool cuda_graph_enable_ = false;
 
-  // The OrtAllocator object will be get during ep compute time
-  // and should be kept for the lifetime of TRT EP object.
-  OrtAllocator* alloc_ = nullptr;
-
   std::unordered_set<std::string> control_flow_op_set_ = {"If", "Loop", "Scan"};
   mutable std::unordered_map<std::string, std::unique_ptr<SubGraphContext>> subgraph_context_map_;
 

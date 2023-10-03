@@ -187,7 +187,7 @@ class AttentionCPUBase : public AttentionBase {
           // A: Q                (B x N x) S x H          (B x N x) S x H        S x H
           // B: K'               (B x N x) T x H          (B x N x) H x T        H x T
           // C: attention_probs  (B x N x) S x T          (B x N x) S x T        S x T
-          math::Gemm<T, ThreadPool>(CblasNoTrans, CblasTrans, sequence_length, total_sequence_length, head_size, alpha,
+          math::Gemm<T, ThreadPool>(CblasNoTrans, CblasTrans, sequence_length, total_sequence_length, head_size, 1.0,
                                     Q + q_input_chunk_length * i, k, 1.0,
                                     output, nullptr);
 
@@ -195,6 +195,9 @@ class AttentionCPUBase : public AttentionBase {
             for (int j = 0; j < sequence_length * total_sequence_length; j++) {
               output[j] += relative_position_bias_data[output_offset + j];
             }
+          }
+          for (int j = 0; j < sequence_length * total_sequence_length; j++) {
+            output[j] *= alpha;
           }
         }
       });

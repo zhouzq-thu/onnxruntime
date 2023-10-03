@@ -1040,7 +1040,7 @@ class FusionAttention(Fusion):
             "path3": (["Softmax", "Where", "MatMul", "Div"], [0, 0, 2, 0]),
             "path4": (["Softmax", "Add", "Where", "MatMul"], [0, 0, 0, 2]),
             "path5": (["Softmax", "Div", "MatMul"], [0, 0, 0]),
-            "path6": (["Softmax", "Add", "Add", "Div", "MatMul"], [0, 0, None, 0, 0]),
+            "path6": (["Softmax", "Add", "Div", "Add", "MatMul"], [0, 0, None, 0, 0]),
         }
 
         qk_nodes = None
@@ -1072,7 +1072,7 @@ class FusionAttention(Fusion):
         elif is_no_mask_attention:
             (_, _, matmul_qk) = qk_nodes
         elif has_rel_pos_bias:
-            (_, add_qk, add_rel_bias_qk, div_qk, matmul_qk) = qk_nodes
+            (_, add_qk, div_qk, add_rel_bias_qk, matmul_qk) = qk_nodes
         else:
             (_, add_qk, _, matmul_qk) = qk_nodes
 

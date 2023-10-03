@@ -380,7 +380,7 @@ __device__ inline void SoftmaxWithRawMaskSmall(const int all_sequence_length,
 
   float thread_data = -CUDART_INF_F;
   if (threadIdx.x < all_sequence_length) {
-    thread_data = float(input[index]) * rsqrt_head_size;
+    thread_data = float(input[index]);
 
     const int sequence_index = blockIdx.x % sequence_length;
     if (causal) {
@@ -416,6 +416,7 @@ __device__ inline void SoftmaxWithRawMaskSmall(const int all_sequence_length,
       float bias = broadcast_rel_pos_bias ? float(rel_pos_bias[index % size_per_batch]) : float(rel_pos_bias[index]);
       thread_data += bias;
     }
+    thread_data *= rsqrt_head_size;
   }
 
   if (skip_softmax) {

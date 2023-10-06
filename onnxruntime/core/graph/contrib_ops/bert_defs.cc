@@ -1034,7 +1034,7 @@ ONNX_MS_OPERATOR_SET_SCHEMA(
         .Input(5,
                "past_sequence_length",
                "When buffered past_key and past_value is used (present_key uses same tensor as past_key), required"
-               "to specify past_sequence_length (could be 0). Otherwise, past_sequence_length infered from past_key.",
+               "to specify past_sequence_length (could be 0). Otherwise, past_sequence_length inferred from past_key.",
                "M",
                OpSchema::Optional)
         .Output(0,
@@ -1056,7 +1056,7 @@ ONNX_MS_OPERATOR_SET_SCHEMA(
                 "T",
                 OpSchema::Optional)
         .TypeConstraint("T", {"tensor(float16)"}, "Constrain input and output to float tensors.")
-        .TypeConstraint("M", {"tensor(int32)"}, "Constrain past sequence length to int tensor.")
+        .TypeConstraint("M", {"tensor(int32)", "tensor(int64)"}, "Constrain past sequence length to int tensor.")
         .TypeAndShapeInferenceFunction([](ONNX_NAMESPACE::InferenceContext& ctx) {
           GroupQueryAttentionTypeAndShapeInference(ctx, 3);
         }));

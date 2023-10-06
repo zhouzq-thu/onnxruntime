@@ -1034,7 +1034,7 @@ ONNX_MS_OPERATOR_SET_SCHEMA(
         .Input(5,
                "past_sequence_length",
                "When buffered past_key and past_value is used (present_key uses same tensor as past_key), required"
-               "to specify past_sequence_length (could be 0). Otherwise, past_sequence_length infered from past_key.",
+               "to specify past_sequence_length (could be 0). Otherwise, past_sequence_length inferred from past_key.",
                "M",
                OpSchema::Optional)
         .Output(0,
@@ -1056,7 +1056,7 @@ ONNX_MS_OPERATOR_SET_SCHEMA(
                 "T",
                 OpSchema::Optional)
         .TypeConstraint("T", {"tensor(float16)"}, "Constrain input and output to float tensors.")
-        .TypeConstraint("M", {"tensor(int32)"}, "Constrain past sequence length to int tensor.")
+        .TypeConstraint("M", {"tensor(int32)", "tensor(int64)"}, "Constrain past sequence length to int tensor.")
         .TypeAndShapeInferenceFunction([](ONNX_NAMESPACE::InferenceContext& ctx) {
           GroupQueryAttentionTypeAndShapeInference(ctx, 3);
         }));
@@ -1137,9 +1137,13 @@ ONNX_MS_OPERATOR_SET_SCHEMA(
               "Custom scale will be used if specified. Default value is 1.0",
               AttributeProto::FLOAT,
               OPTIONAL_VALUE)
+        .Attr("interleaved",
+              "Rotate using interleaved pattern. Default value is 0 (False).",
+              AttributeProto::INT,
+              OPTIONAL_VALUE)
         .Input(0,
                "input",
-               "3D tensor with shape (batch_size, sequence_length, hidden_size), 4D tensor of shape (batch_size, sequence_length, num_heads, head_size), or 4D tensor of shape (batch_size, num_heads, sequence_length, head_size)",
+               "3D tensor with shape (batch_size, sequence_length, hidden_size)",
                "T")
         .Input(1,
                "position_ids",
@@ -1147,15 +1151,15 @@ ONNX_MS_OPERATOR_SET_SCHEMA(
                "M")
         .Input(2,
                "cos_cache",
-               "2D tensor with shape (max_sequence_length, head_size / 2) or shape (sequence_length, head_size). ",
+               "2D tensor with shape (max_sequence_length, head_size / 2).",
                "T")
         .Input(3,
                "sin_cache",
-               "2D tensor with shape (max_sequence_length, head_size / 2) or shape (sequence_length, head_size). ",
+               "2D tensor with shape (max_sequence_length, head_size / 2).",
                "T")
         .Output(0,
                 "output",
-                "3D tensor with shape (batch_size, sequence_length, hidden_size), 4D tensor of shape (batch_size, sequence_length, num_heads, head_size), or 4D tensor of shape (batch_size, num_heads, sequence_length, head_size)",
+                "3D tensor with shape (batch_size, sequence_length, hidden_size)",
                 "T")
         .TypeConstraint("T", {"tensor(float)", "tensor(float16)"}, "Constrain input and output types to float tensors.")
         .TypeConstraint("M", {"tensor(int64)"}, "Constrain input and output types to integer tensors")

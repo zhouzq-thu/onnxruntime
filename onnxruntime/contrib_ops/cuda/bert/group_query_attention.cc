@@ -18,19 +18,19 @@ namespace onnxruntime {
 namespace contrib {
 namespace cuda {
 
-#define REGISTER_KERNEL_TYPED(T)                                       \
-  ONNX_OPERATOR_TYPED_KERNEL_EX(                                       \
-      GroupQueryAttention,                                             \
-      kMSDomain,                                                       \
-      1,                                                               \
-      T,                                                               \
-      kCudaExecutionProvider,                                          \
-      (*KernelDefBuilder::Create())                                    \
-          .TypeConstraint("T", DataTypeImpl::GetTensorType<T>())       \
-          .TypeConstraint("M", DataTypeImpl::GetTensorType<int32_t>()) \
-          .MayInplace(3, 1) \
-          .MayInplace(4, 2) \
-          .InputMemoryType(OrtMemTypeCPUInput, 5),                     \
+#define REGISTER_KERNEL_TYPED(T)                                                                                 \
+  ONNX_OPERATOR_TYPED_KERNEL_EX(                                                                                 \
+      GroupQueryAttention,                                                                                       \
+      kMSDomain,                                                                                                 \
+      1,                                                                                                         \
+      T,                                                                                                         \
+      kCudaExecutionProvider,                                                                                    \
+      (*KernelDefBuilder::Create())                                                                              \
+          .TypeConstraint("T", DataTypeImpl::GetTensorType<T>())                                                 \
+          .TypeConstraint("M", {DataTypeImpl::GetTensorType<int32_t>(), DataTypeImpl::GetTensorType<int64_t>()}) \
+          .MayInplace(3, 1)                                                                                      \
+          .MayInplace(4, 2)                                                                                      \
+          .InputMemoryType(OrtMemTypeCPUInput, 5),                                                               \
       GroupQueryAttention<T>);
 
 // REGISTER_KERNEL_TYPED(float)
@@ -71,18 +71,18 @@ Status GroupQueryAttention<T>::ComputeInternal(OpKernelContext* context) const {
   typedef typename ToCudaType<T>::MappedType CudaT;
   GroupQueryAttentionData<CudaT> data;
 
-  ORT_RETURN_IF_ERROR(group_query_attention_helper::CheckInputs<Tensor>(query,
-                                                                        key,
-                                                                        value,
-                                                                        past_key,
-                                                                        past_value,
-                                                                        &parameters,
-                                                                        num_heads_,
-                                                                        kv_num_heads_,
-                                                                        past_seq_len,
-                                                                        is_past_bsnh_,
-                                                                        scale_,
-                                                                        device_prop.maxThreadsPerBlock));
+  ORT_RETURN_IF_ERROR(group_query_attention_helper::CheckInputs(query,
+                                                                key,
+                                                                value,
+                                                                past_key,
+                                                                past_value,
+                                                                &parameters,
+                                                                num_heads_,
+                                                                kv_num_heads_,
+                                                                past_seq_len,
+                                                                is_past_bsnh_,
+                                                                scale_,
+                                                                device_prop.maxThreadsPerBlock));
   parameters.is_unidirectional = is_unidirectional_;
   int sequence_length = parameters.sequence_length;
 
@@ -95,10 +95,10 @@ Status GroupQueryAttention<T>::ComputeInternal(OpKernelContext* context) const {
   std::vector<int64_t> present_dims;
   if (parameters.past_kv_format == AttentionQkvFormat::Q_K_V_BSNH) {
     present_dims = {
-      parameters.batch_size, parameters.present_sequence_length, parameters.kv_num_heads, parameters.head_size};
-  } else { // BNSH
+        parameters.batch_size, parameters.present_sequence_length, parameters.kv_num_heads, parameters.head_size};
+  } else {  // BNSH
     present_dims = {
-      parameters.batch_size, parameters.kv_num_heads, parameters.present_sequence_length, parameters.head_size};
+        parameters.batch_size, parameters.kv_num_heads, parameters.present_sequence_length, parameters.head_size};
   }
   TensorShape present_shape(present_dims);
   Tensor* present_key = context->Output(1, present_shape);

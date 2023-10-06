@@ -302,6 +302,15 @@ def get_args():
     )
 
     parser.add_argument(
+        "-id",
+        "--device-id",
+        required=False,
+        type=str,
+        default="0",
+        help="Device ID for GPUs",
+    )
+
+    parser.add_argument(
         "-q",
         "--quantization_method",
         default="",
@@ -408,12 +417,10 @@ def main():
     # Load model and config
     use_auth_token = args.input == os.path.join(".")
     setattr(args, "use_auth_token", use_auth_token)  # noqa: B010
-    l_config = LlamaConfig.from_pretrained(
-        args.model_name if use_auth_token else args.input, use_auth_token=use_auth_token
-    )
-    llama = LlamaForCausalLM.from_pretrained(
-        args.model_name if use_auth_token else args.input, use_auth_token=use_auth_token, use_cache=True
-    )
+
+    location = args.model_name if use_auth_token else args.input
+    l_config = LlamaConfig.from_pretrained(location, use_auth_token=use_auth_token)
+    llama = LlamaForCausalLM.from_pretrained(location, use_auth_token=use_auth_token, use_cache=True)
     original_model_name = args.model_name
     setattr(args, "original_model_name", original_model_name)  # noqa: B010
     args.model_name = args.model_name.split("/")[-1]
@@ -569,6 +576,8 @@ def main():
         parity_cmd = ["-m", f"{original_model_name}", "-o", f"{os.path.join(args.output, filename)}", "-fp", precision]
         if "with_past" in filename:
             parity_cmd.append("--use_past_kv")
+        if "fp16" in filename:
+            parity_cmd.extend(["--execution_provider", "cuda", "--device-id", args.device_id])
         parity_check(parity_cmd)
 
 

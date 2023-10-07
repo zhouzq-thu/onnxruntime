@@ -6,7 +6,7 @@
       "component": {
         "type": "git",
         "git": {
-          "commitHash": "29bf8085f3bf17b84d30e34b3d7ff8248fda404e",
+          "commitHash": "fb3621f4f897824c0dbe0615fa94543df6192f30",
           "repositoryUrl": "https://github.com/abseil/abseil-cpp.git"
         },
         "comments": "abseil_cpp"
@@ -166,7 +166,7 @@
       "component": {
         "type": "git",
         "git": {
-          "commitHash": "fdefbe85ed9c362b95b9b401cd19db068a76141f",
+          "commitHash": "14303de049144035dfd94ace5f7a3b44773b1aad",
           "repositoryUrl": "https://github.com/onnx/onnx.git"
         },
         "comments": "onnx"

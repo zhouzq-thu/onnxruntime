@@ -10,8 +10,5 @@ python onnxruntime/python/tools/transformers/models/llama2/llama-v2.py \
   --ort \
   --export \
   --optimize \
-  --generate \
-  --save-opt \
   --tunable \
-  --tuning \
-  --convert-fp16
+  --tuning

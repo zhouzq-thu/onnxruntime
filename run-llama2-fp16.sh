@@ -11,7 +11,7 @@ python onnxruntime/python/tools/transformers/models/llama2/llama-v2.py \
   --tunable \
   --tuning \
   -dm  llama2-7b-hf/rank-0_decoder_model_fp32.onnx \
-  -dpm llama2-7b-hf/rank-0_decoder_with_past_model_fp32.onnx
+  -dpm llama2-7b-hf/rank-0_decoder_with_past_model_fp32.onnx $@
 
-  -dm  llama2-7b-hf/rank-0_decoder_model_fp16.onnx \
-  -dpm llama2-7b-hf/rank-0_decoder_with_past_model_fp16.onnx
+  # -dm  llama2-7b-hf/rank-0_decoder_model_fp16.onnx \
+  # -dpm llama2-7b-hf/rank-0_decoder_with_past_model_fp16.onnx

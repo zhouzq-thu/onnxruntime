@@ -18,6 +18,9 @@ class Fp8MatMul final : public RocmKernel {
   Fp8MatMul(const OpKernelInfo& info) : RocmKernel(info) {
     info.GetAttrOrDefault<float>("scale_a", &scale_a_, 1.0f);
     info.GetAttrOrDefault<float>("scale_b", &scale_b_, 1.0f);
+
+    tunable_op_fp8_fp16_fp16_ = std::make_unique<decltype(tunable_op_fp8_fp16_fp16_)::element_type>();
+    tunable_op_fp16_fp8_fp16_ = std::make_unique<decltype(tunable_op_fp16_fp8_fp16_)::element_type>();
   }
   Status ComputeInternal(OpKernelContext* ctx) const override;
 
@@ -25,8 +28,8 @@ class Fp8MatMul final : public RocmKernel {
   Status ComputeFp8Fp16Fp16(OpKernelContext* ctx, const Tensor* A, const Tensor* B, Tensor* C) const;
   Status ComputeFp16Fp8Fp16(OpKernelContext* ctx, const Tensor* A, const Tensor* B, Tensor* C) const;
 
-  std::unique_ptr<F8GemmTunableOp<Float8E4M3FNUZ, MLFloat16, MLFloat16, internal::Row, internal::Row>> tunable_op_fp8_fp16_fp16_{};
-  std::unique_ptr<F8GemmTunableOp<MLFloat16, Float8E4M3FNUZ, MLFloat16, internal::Row, internal::Row>> tunable_op_fp16_fp8_fp16_{};
+  std::unique_ptr<F8GemmTunableOp<Float8E4M3FNUZ, MLFloat16, MLFloat16, internal::Row, internal::Row>> tunable_op_fp8_fp16_fp16_;
+  std::unique_ptr<F8GemmTunableOp<MLFloat16, Float8E4M3FNUZ, MLFloat16, internal::Row, internal::Row>> tunable_op_fp16_fp8_fp16_;
   float scale_a_;
   float scale_b_;
 };
@@ -65,7 +68,7 @@ Status Fp8MatMul::ComputeFp16Fp8Fp16(OpKernelContext* ctx, const Tensor* A, cons
   auto a_shape = A->Shape();
   auto b_shape = B->Shape();
 
-  auto m = a_shape.Slice(0, a_shape.NumDimensions() - 2).Size();
+  auto m = a_shape.Slice(0, a_shape.NumDimensions() - 1).Size();
   auto k = a_shape[a_shape.NumDimensions() - 1];
   auto n = b_shape[b_shape.NumDimensions() - 1];
 

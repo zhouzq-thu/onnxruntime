@@ -257,7 +257,8 @@ auto GetCKF8SplitKGemmTypeStringAndOps() {
     } else if constexpr (std::is_same_v<CKTA, ck::half_t> && std::is_same_v<CKTB, ck::f8_t> && std::is_same_v<CKTC, ck::half_t>) {
       add_device_gemm_xdl_splitk_f16_f8_f16_mk_kn_mn_instances(instances);
     } else {
-      // static_assert(false, "no instances");
+      // static_assert(always_false<ALayout>, "no instances");
+      LOGS_DEFAULT(FATAL) << "no instances";
     }
     for (auto&& impl : instances) {
       auto type_string = std::to_string(ret.size()) + "_" + impl->GetTypeString() + "_SplitK" + std::to_string(num_split);

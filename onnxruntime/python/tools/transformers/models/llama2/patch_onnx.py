@@ -35,16 +35,6 @@ def compute_scaling_factor(a: np.ndarray, fp8_max: float, margin: int) -> float:
     return sf.item()
 
 
-def cast_and_scale(a, dtype: str):
-    if dtype == "float16":
-        return a.astype(dtype), 1.0
-    elif dtype == "float8_e4m3fnuz":
-        sf = compute_scaling_factor(a, fp8_max=finfo(float8_e4m3fnuz).max, margin=4)
-        return (a * sf).astype(float8_e4m3fnuz), sf
-    else:
-        raise ValueError(dtype)
-
-
 class ReplaceMatMulAsFp8MatMul:
     def __init__(self, model: onnx.ModelProto):
         self.model = model
@@ -90,7 +80,7 @@ class ReplaceMatMulAsFp8MatMul:
 
         print(f"  -- overwriting initializer[{initializer_name}]")
         idx = self.initializer_index[initializer_name]
-        weight_fp16 = np.frombuffer(self.model.graph.initializer[idx].raw_data, dtype=np.float16)
+        weight_fp16 = onnx.numpy_helper.to_array(self.model.graph.initializer[idx])
         scale = compute_scaling_factor(weight_fp16, fp8_max=finfo(float8_e4m3fnuz).max, margin=4)
         weight_fp8 = (weight_fp16 * scale).astype(float8_e4m3fnuz)
         self.model.graph.initializer[idx].raw_data = bytes(

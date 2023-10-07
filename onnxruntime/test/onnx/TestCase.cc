@@ -768,16 +768,16 @@ void LoadTests(const std::vector<std::basic_string<PATH_CHAR_TYPE>>& input_paths
 
       std::basic_string<PATH_CHAR_TYPE> p = ConcatPathComponent(node_data_root_path, filename_str);
 
-      std::unique_ptr<TestModelInfo> model_info;
+      std::unique_ptr<OnnxModelInfo> model_info;
 
       if (is_onnx_format) {
 #if !defined(ORT_MINIMAL_BUILD)
-        model_info = TestModelInfo::LoadOnnxModel(p.c_str());
+        model_info = std::make_unique<OnnxModelInfo>(p.c_str());
 #else
         ORT_THROW("onnx model is not supported in this build");
 #endif
       } else if (is_ort_format) {
-        model_info = TestModelInfo::LoadOrtModel(p.c_str());
+        model_info = std::make_unique<OnnxModelInfo>(p.c_str());
       } else {
         ORT_NOT_IMPLEMENTED(ToUTF8String(filename_str), " is not supported");
       }

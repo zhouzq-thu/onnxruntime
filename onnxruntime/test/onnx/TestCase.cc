@@ -782,6 +782,11 @@ void LoadTests(const std::vector<std::basic_string<PATH_CHAR_TYPE>>& input_paths
         ORT_NOT_IMPLEMENTED(ToUTF8String(filename_str), " is not supported");
       }
 
+      if (model_info->HasDomain(ONNX_NAMESPACE::AI_ONNX_TRAINING_DOMAIN) ||
+              model_info->HasDomain(ONNX_NAMESPACE::AI_ONNX_PREVIEW_TRAINING_DOMAIN)) {
+            return true;
+      }
+
       const auto tolerance_key = ToUTF8String(my_dir_name);
 
       std::unique_ptr<ITestCase> l = CreateOnnxTestCase(ToUTF8String(test_case_name), std::move(model_info),

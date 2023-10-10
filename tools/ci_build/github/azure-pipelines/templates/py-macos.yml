@@ -32,11 +32,6 @@ jobs:
     clean: true
     submodules: recursive
 
-  - task: UsePythonVersion@0
-    displayName: 'Use Python'
-    inputs:
-      versionSpec: $(parameters.python_version)
-
   - script: |
       set -ex
       uname -m
@@ -44,17 +39,6 @@ jobs:
     displayName: 'Mac machine info'
 
   - template: use-xcode-version.yml
-
-  - task: PythonScript@0
-    inputs:
-      scriptSource: inline
-      script: |
-        import sys
-        np_version = 'numpy==1.21.6' if sys.version_info < (3, 11) else 'numpy==1.24.2'
-        import subprocess
-        subprocess.call(['pip', 'install', '-q', 'setuptools', 'wheel', np_version])
-      workingDirectory: '$(Build.BinariesDirectory)'
-      displayName: 'Install python modules'
 
   # Don't remove _PYTHON_HOST_PLATFORM, it's used to generate correct package name
   # Setting _PYTHON_HOST_PLATFORM overwrites the value return by get_platform()
@@ -73,13 +57,10 @@ jobs:
       for PYTHON_EXE in "${PYTHON_EXES[@]}"
       do
         rm -rf $(Build.BinariesDirectory)/${{ parameters.cmake_build_type }}
+        ${PYTHON_EXE} -m pip install numpy==1.24.2
         ${PYTHON_EXE} $(Build.SourcesDirectory)/tools/ci_build/build.py --build_dir $(Build.BinariesDirectory) --use_coreml --skip_submodule_sync --parallel --config ${{ parameters.cmake_build_type }} --update --build --cmake_extra_defines CMAKE_OSX_ARCHITECTURES=${{ parameters.arch }} --build_wheel ${{ parameters.extra_build_arg }}
         cp $(Build.BinariesDirectory)/${{ parameters.cmake_build_type }}/dist/*.whl /build/dist
       done      
-    displayName: 'Build onnxruntime wheel'
-
-  - script: |
-      set -ex
       python -m pip install --upgrade delocate
       cd '$(Build.BinariesDirectory)/${{ parameters.cmake_build_type }}/dist'
       ls
@@ -92,7 +73,7 @@ jobs:
         delocate-listdeps "$file"
         delocate-wheel --require-archs=${{ parameters.arch }} -w fixed_wheels -v "$file"
       done
-    displayName: 'delocate wheel'
+    displayName: 'Build onnxruntime wheel'
 
   - task: PublishPipelineArtifact@0
     displayName: 'Publish Artifact: ONNXRuntime python wheel'

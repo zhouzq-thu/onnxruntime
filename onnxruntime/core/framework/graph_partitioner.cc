@@ -650,7 +650,7 @@ static Status PartitionOnnxFormatModel(const PartitionParams& partition_params, 
     }
 
     // expand any nodes that have an ONNX function definition but no matching ORT kernel.
-    // modified_graph = false;
+    modified_graph = false;
     ORT_RETURN_IF_ERROR(InlineNodes(graph, modified_graph));
 
     // Resolve and rerun graph partitioning and inlining if there was a change

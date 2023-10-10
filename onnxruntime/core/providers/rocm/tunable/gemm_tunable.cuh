@@ -7,7 +7,6 @@
 
 #include "core/providers/rocm/cu_inc/common.cuh"
 #include "core/providers/rocm/tunable/gemm_ck.cuh"
-#include "core/providers/rocm/tunable/gemm_ck_fp8.cuh"
 #include "core/providers/rocm/tunable/gemm_common.h"
 #include "core/providers/rocm/tunable/gemm_hipblaslt.h"
 #include "core/providers/rocm/tunable/gemm_rocblas.h"
@@ -94,21 +93,6 @@ class GemmTunableOp : public TunableOp<GemmParams<T>> {
       HIP_CALL_THROW(hipFree(params->c));
       delete params;
     }
-  }
-};
-
-template <typename TA, typename TB, typename TC, typename ALayout, typename BLayout>
-class F8GemmTunableOp : public TunableOp<FP8GemmParams<TA, TB, TC>> {
- public:
-  F8GemmTunableOp() {
-#ifdef USE_COMPOSABLE_KERNEL
-    for (auto&& [_, op] : GetCKF8SplitKGemmTypeStringAndOps<TA, TB, TC, ALayout, BLayout>()) {
-      ORT_UNUSED_PARAMETER(_);
-      this->RegisterOp(std::move(op));
-    }
-#else
-    static_assert(false, "CK is required to support fp8 computing")
-#endif
   }
 };
 

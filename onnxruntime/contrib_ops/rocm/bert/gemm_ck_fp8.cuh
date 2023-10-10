@@ -151,8 +151,8 @@ static_assert(std::is_invocable_r_v<void, Scale,
                                     const ck::f8_t&, const ck::f8_t&>);
 
 static_assert(!std::is_invocable_r_v<void, Scale,
-                                    ck::half_t&, ck::half_t&, ck::half_t&, ck::half_t&,
-                                    const ck::f8_t&, const ck::f8_t&, const ck::f8_t&, const ck::f8_t&>);
+                                     ck::half_t&, ck::half_t&, ck::half_t&, ck::half_t&,
+                                     const ck::f8_t&, const ck::f8_t&, const ck::f8_t&, const ck::f8_t&>);
 
 struct MacPassThrough {
   __forceinline__ __device__ void operator()(ck::half_t& y, const ck::f8_t& x) const {
@@ -171,7 +171,7 @@ struct MacScale {
   __forceinline__ __device__ void operator()(ck::half_t& y, const ck::half_t& x) const {
     float scale = nullptr == dev_scale_ptr ? scale_value : *dev_scale_ptr;
 
-    uint8_t x_uint8 = reinterpret_cast<const uchar2&>(x).data[0]; // extract low 8 bits as fp8
+    uint8_t x_uint8 = reinterpret_cast<const uchar2&>(x).data[0];  // extract low 8 bits as fp8
     ck::f8_t x_f8 = reinterpret_cast<ck::f8_t&>(x_uint8);
     y = scale * fast_type_convert<ck::half_t>(x_f8);
   }
@@ -263,7 +263,8 @@ auto GetCKF8SplitKGemmTypeStringAndOps() {
     } else if constexpr (std::is_same_v<CKTA, ck::half_t> && std::is_same_v<CKTB, ck::f8_t> && std::is_same_v<CKTC, ck::half_t>) {
       add_device_gemm_xdl_splitk_f16_f8_f16_mk_kn_mn_instances(instances);
     } else {
-      // static_assert(false, "no instances");
+      // static_assert(always_false<ALayout>, "no instances");
+      LOGS_DEFAULT(FATAL) << "no instances";
     }
     for (auto&& impl : instances) {
       auto type_string = std::to_string(ret.size()) + "_" + impl->GetTypeString() + "_SplitK" + std::to_string(num_split);
@@ -291,6 +292,22 @@ auto GetCKF8SplitKGemmTypeStringAndOps() {
 #endif  // USE_COMPOSABLE_KERNEL
 
 }  // namespace internal
+
+template <typename TA, typename TB, typename TC, typename ALayout, typename BLayout>
+class F8GemmTunableOp : public TunableOp<FP8GemmParams<TA, TB, TC>> {
+ public:
+  F8GemmTunableOp() {
+#ifdef USE_COMPOSABLE_KERNEL
+    for (auto&& [_, op] : internal::GetCKF8SplitKGemmTypeStringAndOps<TA, TB, TC, ALayout, BLayout>()) {
+      ORT_UNUSED_PARAMETER(_);
+      this->RegisterOp(std::move(op));
+    }
+#else
+    static_assert(false, "CK is required to support fp8 computing")
+#endif
+  }
+};
+
 }  // namespace blas
 }  // namespace tunable
 }  // namespace rocm

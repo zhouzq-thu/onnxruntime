@@ -7,7 +7,7 @@
 #include "ck/tensor_operation/gpu/device/tensor_layout.hpp"
 #include "ck/tensor_operation/gpu/device/impl/device_gemm_xdl_splitk_c_shuffle.hpp"
 
-#include "core/providers/rocm/tunable/gemm_ck_fp8.cuh"
+#include "contrib_ops/rocm/bert/gemm_ck_fp8.cuh"
 
 namespace onnxruntime {
 namespace rocm {
@@ -43,6 +43,21 @@ void add_device_gemm_xdl_splitk_f16_f8_f16_mk_kn_mn_instances(
         instances) {
   add_device_gemm_xdl_splitk_f16_f8_f16_mk_kn_mn_instances_original(instances);
   add_device_gemm_xdl_splitk_f16_f8_f16_mk_kn_mn_instances_derived(instances);
+}
+
+void add_device_gemm_xdl_splitk_f8_f16_f16_mk_kn_mn_instances_original(
+    std::vector<std::unique_ptr<ck::tensor_operation::device::DeviceGemmSplitK<
+        Row, Row, Row, F8, F16, F16, Scale, PassThrough, PassThrough>>>& instances);
+
+void add_device_gemm_xdl_splitk_f8_f16_f16_mk_kn_mn_instances_derived(
+    std::vector<std::unique_ptr<ck::tensor_operation::device::DeviceGemmSplitK<
+        Row, Row, Row, F8, F16, F16, Scale, PassThrough, PassThrough>>>& instances);
+
+void add_device_gemm_xdl_splitk_f8_f16_f16_mk_kn_mn_instances(
+    std::vector<std::unique_ptr<ck::tensor_operation::device::DeviceGemmSplitK<
+        Row, Row, Row, F8, F16, F16, Scale, PassThrough, PassThrough>>>& instances) {
+  add_device_gemm_xdl_splitk_f8_f16_f16_mk_kn_mn_instances_original(instances);
+  add_device_gemm_xdl_splitk_f8_f16_f16_mk_kn_mn_instances_derived(instances);
 }
 
 }  // namespace internal

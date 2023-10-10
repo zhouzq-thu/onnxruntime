@@ -11,7 +11,7 @@
 
 #include "core/providers/rocm/rocm_common.h"
 #include "core/providers/rocm/tunable/gemm_common.h"
-#include "core/providers/rocm/tunable/gemm_ck_fp8.cuh"
+#include "contrib_ops/rocm/bert/gemm_ck_fp8.cuh"
 #include "python/tools/kernel_explorer/device_array.h"
 #include "python/tools/kernel_explorer/kernel_explorer_interface.h"
 

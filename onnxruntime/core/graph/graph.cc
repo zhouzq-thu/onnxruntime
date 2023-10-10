@@ -3261,8 +3261,8 @@ Node& Graph::AddNode(const std::string& name,
                      gsl::span<NodeArg* const> output_args,
                      const NodeAttributes* attributes,
                      const std::string& domain) {
-  InlinedVector<NodeArg*> inputs;
-  InlinedVector<NodeArg*> outputs;
+  std::vector<NodeArg*> inputs;
+  std::vector<NodeArg*> outputs;
   inputs.resize(input_args.size());
   outputs.resize(output_args.size());
   int i = 0;

@@ -25,6 +25,11 @@ struct CKDataTypeAdaptor<half> {
 };
 
 template <>
+struct CKDataTypeAdaptor<MLFloat16> {
+  using type = ck::half_t;
+};
+
+template <>
 struct CKDataTypeAdaptor<BFloat16> {
   using type = ck::bhalf16_t;
 };

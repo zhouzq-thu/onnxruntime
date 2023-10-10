@@ -65,10 +65,6 @@ class CKFP8Gemm : public IKernelExplorer {
       type_strings_.emplace_back(std::move(type_string));
       ops_.emplace_back(std::move(op));
     }
-    for (auto&& [type_string, op] : GetHgyCKF8SplitKGemmTypeStringAndOps<TA, TB, TC, ALayout, BLayout>()) {
-      type_strings_.emplace_back(std::move(type_string));
-      ops_.emplace_back(std::move(op));
-    }
     ORT_ENFORCE(!ops_.empty());
   }
 

@@ -13,10 +13,7 @@
 #include "ck/ck.hpp"
 #include "ck/utility/functional3.hpp"
 #include "ck/tensor_operation/gpu/device/tensor_layout.hpp"
-// #include "ck/tensor_operation/gpu/device/device_gemm.hpp"
 #include "ck/tensor_operation/gpu/device/device_gemm_splitk.hpp"
-#include "ck/tensor_operation/gpu/device/device_gemm_splitk_hgy.hpp"
-// #include "ck/library/tensor_operation_instance/gpu/gemm_splitk.hpp"
 #include "ck/tensor_operation/gpu/element/element_wise_operation.hpp"
 #endif
 
@@ -236,15 +233,6 @@ void add_device_gemm_xdl_splitk_f16_f8_f16_mk_kn_mn_instances(
     std::vector<std::unique_ptr<ck::tensor_operation::device::DeviceGemmSplitK<
         Row, Row, Row, ck::half_t, ck::f8_t, ck::half_t, Nop, Scale, Nop>>>& instances);
 
-void add_device_gemm_xdl_splitk_f8_f16_f16_mk_kn_mn_instances_hgy(
-    std::vector<std::unique_ptr<ck::tensor_operation::device::DeviceGemmSplitKHgy<
-        Row, Row, Row, ck::f8_t, ck::half_t, ck::half_t, MacPassThrough, Nop, Nop, MacScale, Nop>>>& instances);
-
-void add_device_gemm_xdl_splitk_f16_f8_f16_mk_kn_mn_instances_hgy(
-    std::vector<std::unique_ptr<ck::tensor_operation::device::DeviceGemmSplitKHgy<
-        Row, Row, Row, ck::half_t, ck::f8_t, ck::half_t, Nop, MacPassThrough, Nop, Nop, MacScale>>>&
-        instances);
-
 template <typename CKT>
 auto CreateOp(float scale, const float* dev_scale) {
   if constexpr (std::is_same_v<CKT, ck::f8_t>) {
@@ -297,72 +285,6 @@ auto GetCKF8SplitKGemmTypeStringAndOps() {
                                              params->m, params->n, params->k,
                                              params->lda, params->ldb, params->ldc,
                                              op_a, op_b, op_c, num_split);
-        TUNABLE_OP_RETURN_UNSUPPORTED_ARGUMENT_IF(!impl->IsSupportedArgument(arg.get()),
-                                                  impl->GetTypeString(), " does not support ", params->Signature());
-        invoker->Run(arg.get(), StreamConfig{params->StreamHandle()});
-        return Status::OK();
-      };
-      ret.emplace_back(std::make_pair(std::move(type_string), std::move(ck_gemm_op)));
-    }
-  }
-  return ret;
-}
-
-template <typename CKT>
-auto CreateOpAndMacOp(float scale, const float* dev_scale) {
-  if constexpr (std::is_same_v<CKT, ck::f8_t>) {
-    if (dev_scale != nullptr) {
-      return std::tuple<MacPassThrough, MacScale>{MacPassThrough{}, MacScale(dev_scale)};
-    } else {
-      return std::tuple<MacPassThrough, MacScale>{MacPassThrough{}, MacScale(scale)};
-    }
-  } else {
-    return std::tuple<Nop, Nop>{Nop{}, Nop{}};
-  }
-}
-
-template <typename TA, typename TB, typename TC, typename ALayout, typename BLayout>
-auto GetHgyCKF8SplitKGemmTypeStringAndOps() {
-  using CKTA = typename CKDataTypeAdaptor<TA>::type;
-  using CKTB = typename CKDataTypeAdaptor<TB>::type;
-  using CKTC = typename CKDataTypeAdaptor<TC>::type;
-
-  using OpA = std::conditional_t<std::is_same_v<CKTA, ck::f8_t>, MacPassThrough, Nop>;
-  using OpB = std::conditional_t<std::is_same_v<CKTB, ck::f8_t>, MacPassThrough, Nop>;
-  using OpC = std::conditional_t<std::is_same_v<CKTC, ck::f8_t>, Scale, Nop>;
-  using MacOpA = std::conditional_t<std::is_same_v<CKTA, ck::f8_t>, MacScale, Nop>;
-  using MacOpB = std::conditional_t<std::is_same_v<CKTB, ck::f8_t>, MacScale, Nop>;
-
-  using DeviceGemm = ck::tensor_operation::device::DeviceGemmSplitKHgy<
-      ALayout, BLayout, Row,
-      CKTA, CKTB, CKTC,
-      OpA, OpB, OpC,
-      MacOpA, MacOpB>;
-
-  std::vector<std::pair<std::string, Op<FP8GemmParams<TA, TB, TC>>>> ret;
-
-  for (auto num_split : {1, 4, 16, 64}) {
-    std::vector<std::unique_ptr<DeviceGemm>> instances{};
-    // FIXME: only supports fp8_fp16_fp16_row_row_row and fp16_fp8_fp16_row_row_row now.
-    if constexpr (std::is_same_v<CKTA, ck::f8_t> && std::is_same_v<CKTB, ck::half_t> && std::is_same_v<CKTC, ck::half_t>) {
-      add_device_gemm_xdl_splitk_f8_f16_f16_mk_kn_mn_instances_hgy(instances);
-    } else if constexpr (std::is_same_v<CKTA, ck::half_t> && std::is_same_v<CKTB, ck::f8_t> && std::is_same_v<CKTC, ck::half_t>) {
-      add_device_gemm_xdl_splitk_f16_f8_f16_mk_kn_mn_instances_hgy(instances);
-    } else {
-      // static_assert(false, "no instances");
-    }
-    for (auto&& impl : instances) {
-      auto type_string = impl->GetTypeString() + "_SplitK" + std::to_string(num_split);
-      auto invoker = impl->MakeInvokerPointer();
-      auto ck_gemm_op = [num_split, impl = std::move(impl), invoker = std::move(invoker)](const FP8GemmParams<TA, TB, TC>* params) -> Status {
-        auto [op_a, mac_op_a] = CreateOpAndMacOp<CKTA>(params->scale_a, params->scale_a_dev);
-        auto [op_b, mac_op_b] = CreateOpAndMacOp<CKTB>(params->scale_b, params->scale_b_dev);
-        OpC op_c = CreateOp<CKTC>(params->scale_c, params->scale_c_dev);
-
-        auto arg = impl->MakeArgumentPointer(params->a, params->b, params->c,
-                                             params->m, params->n, params->k,
-                                             params->lda, params->ldb, params->ldc,
-                                             op_a, op_b, op_c, num_split, mac_op_a, mac_op_b);
         TUNABLE_OP_RETURN_UNSUPPORTED_ARGUMENT_IF(!impl->IsSupportedArgument(arg.get()),
                                                   impl->GetTypeString(), " does not support ", params->Signature());
         invoker->Run(arg.get(), StreamConfig{params->StreamHandle()});

@@ -1,0 +1,119 @@
+parameters:
+- name: arch
+  type: string
+  values:
+   - arm64
+   - x86_64
+
+- name: cmake_build_type
+  type: string
+  default: 'Release'
+  values:
+   - Debug
+   - Release
+   - RelWithDebInfo
+   - MinSizeRel
+
+- name: extra_build_arg
+  type: string
+  default: ''
+
+jobs:
+- job: MacOS_${{ parameters.arch }}_py_Wheels
+  timeoutInMinutes: 120
+  workspace:
+    clean: all
+  pool:
+    vmImage: 'macOS-13'
+  variables:
+    MACOSX_DEPLOYMENT_TARGET: '11.0'
+  steps:
+  - checkout: self
+    clean: true
+    submodules: recursive
+
+  - task: UsePythonVersion@0
+    displayName: 'Use Python'
+    inputs:
+      versionSpec: $(parameters.python_version)
+
+  - script: |
+      set -ex
+      uname -m
+      system_profiler SPSoftwareDataType SPHardwareDataType
+    displayName: 'Mac machine info'
+
+  - template: use-xcode-version.yml
+
+  - task: PythonScript@0
+    inputs:
+      scriptSource: inline
+      script: |
+        import sys
+        np_version = 'numpy==1.21.6' if sys.version_info < (3, 11) else 'numpy==1.24.2'
+        import subprocess
+        subprocess.call(['pip', 'install', '-q', 'setuptools', 'wheel', np_version])
+      workingDirectory: '$(Build.BinariesDirectory)'
+      displayName: 'Install python modules'
+
+  # Don't remove _PYTHON_HOST_PLATFORM, it's used to generate correct package name
+  # Setting _PYTHON_HOST_PLATFORM overwrites the value return by get_platform()
+  # Ref: https://wiki.debian.org/Python/MultiArch
+  - script: |
+      set -e -x
+      export _PYTHON_HOST_PLATFORM=macosx-${{variables.MACOSX_DEPLOYMENT_TARGET}}-${{ parameters.arch }}
+      pattern="/Users/runner/hostedtoolcache/Python/3.8.*"
+      PYTHON_EXES=( $pattern )
+      pattern="/Users/runner/hostedtoolcache/Python/3.9.*"
+      PYTHON_EXES+=( $pattern )
+      pattern="/Users/runner/hostedtoolcache/Python/3.10.*"
+      PYTHON_EXES+=( $pattern )
+      pattern="/Users/runner/hostedtoolcache/Python/3.11.*"
+      PYTHON_EXES+=( $pattern )
+      for PYTHON_EXE in "${PYTHON_EXES[@]}"
+      do
+        rm -rf $(Build.BinariesDirectory)/${{ parameters.cmake_build_type }}
+        ${PYTHON_EXE} $(Build.SourcesDirectory)/tools/ci_build/build.py --build_dir $(Build.BinariesDirectory) --use_coreml --skip_submodule_sync --parallel --config ${{ parameters.cmake_build_type }} --update --build --cmake_extra_defines CMAKE_OSX_ARCHITECTURES=${{ parameters.arch }} --build_wheel ${{ parameters.extra_build_arg }}
+        cp $(Build.BinariesDirectory)/${{ parameters.cmake_build_type }}/dist/*.whl /build/dist
+      done      
+    displayName: 'Build onnxruntime wheel'
+
+  - script: |
+      set -ex
+      python -m pip install --upgrade delocate
+      cd '$(Build.BinariesDirectory)/${{ parameters.cmake_build_type }}/dist'
+      ls
+      for file in *.whl
+      do
+        [[ "$file" == *${{ parameters.arch }}* ]] || ( echo "Mac Silicon package name is NOT correct" && exit 1)
+      done
+      for file in *.whl
+      do
+        delocate-listdeps "$file"
+        delocate-wheel --require-archs=${{ parameters.arch }} -w fixed_wheels -v "$file"
+      done
+    displayName: 'delocate wheel'
+
+  - task: PublishPipelineArtifact@0
+    displayName: 'Publish Artifact: ONNXRuntime python wheel'
+    inputs:
+      artifactName: 'onnxruntime-macos-${{ parameters.arch }}'
+      targetPath: '$(Build.BinariesDirectory)/${{ parameters.cmake_build_type }}/dist/fixed_wheels'
+
+  - script: |
+      set -e -x
+      rm -rf $(Build.BinariesDirectory)/${{ parameters.cmake_build_type }}/dist
+      rm -rf $(Build.BinariesDirectory)/${{ parameters.cmake_build_type }}/onnxruntime $(Build.BinariesDirectory)/${{ parameters.cmake_build_type }}/pybind11      
+      find $(Build.BinariesDirectory)/${{ parameters.cmake_build_type }}/_deps -mindepth 1 ! -regex '^$(Build.BinariesDirectory)/${{ parameters.cmake_build_type }}/_deps/onnx-src\(/.*\)?' -delete
+      cd $(Build.BinariesDirectory)/${{ parameters.cmake_build_type }}
+      find -executable -type f > $(Build.BinariesDirectory)/${{ parameters.cmake_build_type }}/perms.txt
+
+  - task: PublishPipelineArtifact@0
+    displayName: 'Publish Test Binaries'
+    inputs:
+      artifactName: 'drop-macos-cpu-${{ parameters.arch }}'
+      targetPath: '$(Build.BinariesDirectory)/${{ parameters.cmake_build_type }}'
+      
+  - template: component-governance-component-detection-steps.yml
+    parameters:
+      condition: 'succeeded'

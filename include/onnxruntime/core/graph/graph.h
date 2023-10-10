@@ -83,10 +83,10 @@ class Node {
        gsl::span<NodeArg* const> output_args,
        const NodeAttributes* attributes,
        std::string_view domain) {
-    Init(name, op_type, description,
-         input_args,
-         output_args,
-         attributes, domain);
+    Init(std::string{name}, std::string{op_type}, std::string{description},
+         std::vector<NodeArg*>{input_args.begin(), input_args.end()},
+         std::vector<NodeArg*>{output_args.begin(), output_args.end()},
+         attributes, std::string{domain});
   }
 #endif
 
@@ -581,13 +581,13 @@ class Node {
   ORT_DISALLOW_COPY_ASSIGNMENT_AND_MOVE(Node);
 
 #if !defined(ORT_MINIMAL_BUILD) || defined(ORT_EXTENDED_MINIMAL_BUILD) || defined(ORT_MINIMAL_BUILD_CUSTOM_OPS)
-  void Init(std::string_view name,
-            std::string_view op_type,
-            std::string_view description,
-            gsl::span<NodeArg* const> input_args,
-            gsl::span<NodeArg* const> output_args,
+  void Init(const std::string& name,
+            const std::string& op_type,
+            const std::string& description,
+            const std::vector<NodeArg*>& input_args,
+            const std::vector<NodeArg*>& output_args,
             const NodeAttributes* attributes,
-            std::string_view domain);
+            const std::string& domain);
 #endif
 
 #if !defined(ORT_MINIMAL_BUILD) || defined(ORT_EXTENDED_MINIMAL_BUILD)

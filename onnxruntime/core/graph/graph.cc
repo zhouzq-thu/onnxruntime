@@ -860,18 +860,18 @@ Status Node::LoadEdgesFromOrtFormat(const onnxruntime::fbs::NodeEdge& fbs_node_e
 }
 
 #if !defined(ORT_MINIMAL_BUILD) || defined(ORT_EXTENDED_MINIMAL_BUILD) || defined(ORT_MINIMAL_BUILD_CUSTOM_OPS)
-void Node::Init(std::string_view name,
-                std::string_view op_type,
-                std::string_view description,
-                gsl::span<NodeArg* const> input_args,
-                gsl::span<NodeArg* const> output_args,
+void Node::Init(const std::string& name,
+                const std::string& op_type,
+                const std::string& description,
+                const std::vector<NodeArg*>& input_args,
+                const std::vector<NodeArg*>& output_args,
                 const NodeAttributes* attributes,
-                std::string_view domain) {
+                const std::string& domain) {
   name_ = name;
   op_type_ = op_type;
   description_ = description;
-  definitions_.input_defs.assign(input_args.begin(), input_args.end());
-  definitions_.output_defs.assign(output_args.begin(), output_args.end());
+  definitions_.input_defs = input_args;
+  definitions_.output_defs = output_args;
   domain_ = domain;
   can_be_saved_ = true;
   priority_ = 0;

@@ -85,6 +85,7 @@ jobs:
         displayName: Run ONNX tests
         inputs:
           script: |
+            set -e
             ./build/Release/onnx_test_runner -e qnn \
               -j 1 -c 1 -i "backend_path|$(QNN_SDK_ROOT)/lib/x86_64-linux-clang/libQnnCpu.so" \
               cmake/external/onnx/onnx/backend/test/data/node
@@ -93,6 +94,7 @@ jobs:
         displayName: Run float32 model tests
         inputs:
           script: |
+            set -e
             ./build/Release/onnx_test_runner -e qnn \
               -j 1 -c 1 -i "backend_path|$(QNN_SDK_ROOT)/lib/x86_64-linux-clang/libQnnCpu.so" \
               /data/float32_models
@@ -101,6 +103,7 @@ jobs:
         displayName: Run QDQ model tests
         inputs:
           script: |
+            set -e
             ./build/Release/onnx_test_runner -e qnn \
               -j 1 -c 1 -i "backend_path|$(QNN_SDK_ROOT)/lib/x86_64-linux-clang/libQnnHtp.so" \
               /data/qdq_models

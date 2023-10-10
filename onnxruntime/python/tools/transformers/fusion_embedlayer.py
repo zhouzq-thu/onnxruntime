@@ -44,6 +44,17 @@ class FusionEmbedLayerNoMask(Fusion):
 
         return gather_0_path[0], gather_1_path[0]
 
+    def match_gather(self, add: NodeProto) -> Union[None, Tuple[NodeProto, NodeProto]]:
+        gather_0_path = self.model.match_parent_path(add, ["Add", "Gather"], [0, 1])
+        if gather_0_path is None:
+            return None
+
+        gather_1_path = self.model.match_parent_path(add, ["Gather"], [1])
+        if gather_1_path is None:
+            return None
+
+        return gather_0_path[1], gather_1_path[0]
+
     def check_attention_subgraph(
         self,
         layernorm: NodeProto,
@@ -237,6 +248,38 @@ class FusionEmbedLayerNoMask(Fusion):
 
         return False
 
+    def match_position_embedding_layoutxlm(self, position_embedding_gather, input_ids, output_name_to_node):
+        """  Match position embedding path from input_ids to Gather for BERT.
+        BERT Embedding Layer Pattern:
+                                (input_ids)
+                                   /   |
+                                 /   Shape
+                                /      |
+                              /        |
+                             /         |
+                            /          |
+                           /           |
+                        Gather         |
+                           \\          |       (position_ids)
+                            \\   ConstantOfShape   /
+                              \\    /           /
+                                Add       Gather
+                                   \\     /
+                                      Add
+                                       |
+                                LayerNormalization
+        """
+        path = self.model.match_parent_path(
+            position_embedding_gather,
+            ["ConstantOfShape", "Shape"],
+            [1, 0],
+            output_name_to_node,
+        )
+        if path is None:
+            return False
+
+        return input_ids == path[1].input[0]
+
     def match_position_embedding_bert(self, position_embedding_gather, input_ids, output_name_to_node):
         """  Match position embedding path from input_ids to Gather for BERT.
 
@@ -317,6 +360,9 @@ class FusionEmbedLayerNoMask(Fusion):
         #       related: https://github.com/huggingface/transformers/issues/10736
         # if self.match_position_embedding_roberta(position_embedding_gather, input_ids, output_name_to_node):
         #    return True
+
+        if self.match_position_embedding_layoutxlm(position_embedding_gather, input_ids, output_name_to_node):
+            return True
 
         if self.match_position_embedding_distilbert(position_embedding_gather, input_ids, output_name_to_node):
             return True
@@ -678,6 +724,7 @@ class FusionEmbedLayerNoMask(Fusion):
             return False
 
         position_embedding_gather = position_embedding_path[0]
+        print("Position embedding = ", position_embedding_gather)
         if not self.match_position_embedding(position_embedding_gather, input_ids, output_name_to_node):
             if not self.match_position_embedding(segment_embedding_gather, input_ids, output_name_to_node):
                 return False
@@ -696,6 +743,56 @@ class FusionEmbedLayerNoMask(Fusion):
             position_embedding_gather,
             segment_embedding_gather,
         )
+        self.finish_fusion(layernorm, embed_node)
+        return True
+
+    def fuse_layoutxlm(self, layernorm, add_before_layernorm, input_name_to_nodes, output_name_to_node, optional_segment_gather=None):
+        """Fuse embedding layer for Bert
+        Args:
+            layernorm (NodeProto): node of LayerNormalization or SkipLayerNormalization
+            add_before_layernorm (NodeProto): the Add node before LayerNormalization, or the SkipLayerNormalization itself
+            input_name_to_nodes (Dict[str, List[NodeProto]]): map from input name to nodes
+            output_name_to_node (Dict[str, List[NodeProto]]): map from output name to nodes
+        """
+        add_2_gather = self.model.match_parent_path(add_before_layernorm, ["Add", "Add"], [0, 0])
+        if add_2_gather is None:
+            return False
+
+        two_gather = self.match_two_gather(add_2_gather[1])
+        if two_gather is None:
+            return False
+
+        word_embedding_gather, segment_embedding_gather = two_gather
+        input_ids = word_embedding_gather.input[1]
+        # position_ids = position_embedding_gather.input[1]
+
+        if not self.check_attention_subgraph(layernorm, input_name_to_nodes, is_distil_bert=False):
+            return False
+
+        position_embedding_path = self.model.match_parent_path(add_before_layernorm, ["Add", "Gather"], [0, 1])
+        if position_embedding_path is None:
+            return False
+
+        position_embedding_gather = position_embedding_path[1]
+        position_ids = position_embedding_gather.input[1]
+        print("Position embedding = ", position_ids)
+
+        if not self.check_attention_subgraph(layernorm, input_name_to_nodes, is_distil_bert=False):
+            return False
+
+        if not self.check_embedding(word_embedding_gather, None, position_embedding_gather):
+            return False
+
+        # make the fused node
+        embed_node = self.create_fused_node(
+            input_ids,
+            layernorm,
+            word_embedding_gather,
+            position_embedding_gather,
+            segment_embedding_gather,
+            position_ids,
+        )
+
         self.finish_fusion(layernorm, embed_node)
         return True
 
@@ -724,6 +821,8 @@ class FusionEmbedLayerNoMask(Fusion):
                 add_before_layernorm = node  # Add is fused into SkipLayerNormalization
                 optional_segment_gather = None
 
+        # print("Optional segment gather = ", optional_segment_gather)
+
         if self.fuse_gpt2(
             node, add_before_layernorm, input_name_to_nodes, output_name_to_node, optional_segment_gather
         ):
@@ -733,6 +832,9 @@ class FusionEmbedLayerNoMask(Fusion):
             return
 
         if self.fuse_bert(node, add_before_layernorm, input_name_to_nodes, output_name_to_node):
+            return
+
+        if self.fuse_layoutxlm(node, add_before_layernorm, input_name_to_nodes, output_name_to_node, optional_segment_gather):
             return
 
 

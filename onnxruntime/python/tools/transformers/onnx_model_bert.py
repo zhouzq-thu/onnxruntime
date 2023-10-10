@@ -6,6 +6,7 @@
 from logging import getLogger
 from typing import List, Optional
 
+import numpy as np
 from convert_to_packing_mode import PackingMode
 from fusion_attention import AttentionMask, FusionAttention
 from fusion_bart_attention import FusionBartAttention
@@ -13,6 +14,8 @@ from fusion_biasgelu import FusionBiasGelu
 from fusion_embedlayer import FusionEmbedLayerNormalization
 from fusion_fastgelu import FusionFastGelu
 from fusion_gelu import FusionGelu
+from fusion_utils import NumpyHelper
+from fusion_base import Fusion
 from fusion_gelu_approximation import FusionGeluApproximation
 from fusion_gemmfastgelu import FusionGemmFastGelu
 from fusion_layernorm import FusionLayerNormalization, FusionLayerNormalizationTF
@@ -52,6 +55,7 @@ class BertOnnxModel(OnnxModel):
             self, self.hidden_size, self.num_heads, self.attention_mask
         )
         self.utils = FusionUtils(self)
+        self.rpb_fusion = FusionRelativePositionBiasBlock(self, 128)
 
     def fuse_attention(self):
         self.attention_fusion.apply()
@@ -243,6 +247,7 @@ class BertOnnxModel(OnnxModel):
 
     def preprocess(self):
         self.adjust_reshape_and_expand()
+        self.rpb_fusion.apply()
         return
 
     def adjust_reshape_and_expand(self):
@@ -480,3 +485,111 @@ class BertOnnxModel(OnnxModel):
     def convert_to_packing_mode(self, use_symbolic_shape_infer: bool = False):
         packing_mode = PackingMode(self)
         packing_mode.convert(use_symbolic_shape_infer)
+
+class FusionRelativePositionBiasBlock(Fusion):
+    def __init__(self, model: OnnxModel, max_distance: int):
+        super().__init__(model, "RelativePositionBias", ["Add", "Slice"])
+        self.max_distance = max_distance
+        # bidirectional=(not self.is_decoder)
+        self.is_bidirectional = False
+
+    def fuse(self, node, input_name_to_nodes, output_name_to_node):
+        # TODO: Optimization opportunity: only last dimension of relative_position_bias is used in decoder.
+        # Cuda kernel can be optimized to only compute last dimension.
+        if node.op_type != "Add" and node.op_type != "Slice":
+            return
+
+        # if node.name == "/encoder/layer.0/attention/self/Add":
+        #     print("Node = ", node)
+
+        compute_bias_nodes = self.model.match_parent_path(
+            node, ["MatMul", "Cast", "OneHot", "Add", "Where"], [1, 0, 0, 0, 1]
+        )
+        if compute_bias_nodes is None:
+            compute_bias_nodes = self.model.match_parent_path(
+                node, ["Unsqueeze", "Transpose", "Gather", "Add", "Where"], [0, 0, 0, 1, 1]
+            )
+            if compute_bias_nodes is None:
+                return
+        # print("Compute bias node = ", compute_bias_nodes)
+
+        matmul = compute_bias_nodes[0]
+        where = compute_bias_nodes[-1]
+        add_node = compute_bias_nodes[-2]
+
+        new_range_nodes = self.model.match_parent_path(
+            add_node, ["Mul", "Cast", "Greater"], [0, 0, 0]
+        )
+
+        less_nodes = self.model.match_parent_path(
+            where, ["Less"], [0]
+        )
+
+        compute_buckets_nodes = self.model.match_parent_path(
+            where,
+            ["Min", "ConstantOfShape", "Shape", "Add", "Cast", "Mul", "Div", "Log", "Div"],
+            [2, 1, 0, 0, 0, 0, 0, 0, 0],
+        )
+        if compute_buckets_nodes is None:
+            return
+
+        # print("Compute bucket nodes = ", compute_buckets_nodes)
+
+        div = compute_buckets_nodes[-1]
+
+        range_nodes = self.model.match_parent_path(
+            div,
+            ["Cast", "Abs", "Sub", "Unsqueeze"],
+            [0, 0, 0, 0],
+        )
+        self.is_bidirectional = True
+        if range_nodes is None:
+            range_nodes = self.model.match_parent_path(
+                div, ["Cast", "Abs", "Sub", "Unsqueeze", "Range"], [0, 0, 0, 0, 0]
+            )
+            # self.is_bidirectional = True
+            if range_nodes is None:
+                return
+
+        print("Range nodes = ", range_nodes)
+
+        unsqueeze_node = range_nodes[-1]
+        sub_node = range_nodes[-2]
+
+        self.nodes_to_remove.extend(compute_bias_nodes)
+        self.nodes_to_remove.extend(compute_buckets_nodes)
+        self.nodes_to_remove.extend(new_range_nodes)
+        self.nodes_to_remove.extend(less_nodes)
+        self.nodes_to_remove.extend(range_nodes)
+
+        node_name_prefix = "encoder" if self.is_bidirectional else "decoder"
+
+        table_weight_i = self.model.get_initializer(matmul.input[1])
+        table_weight = NumpyHelper.to_array(table_weight_i)
+        table_weight_t = np.transpose(table_weight)
+        bias_table = helper.make_tensor(
+            name=self.model.create_node_name("bias_table_weight", name_prefix=node_name_prefix),
+            data_type=TensorProto.FLOAT,
+            dims=[np.shape(table_weight)[0], np.shape(table_weight)[1]],
+            vals=table_weight_t.tobytes(),
+            raw=True,
+        )
+        # print("Add nodes = ", unsqueeze_node)
+
+        self.model.add_initializer(bias_table, self.this_graph_name)
+        inputs = [bias_table.name, unsqueeze_node.input[0], unsqueeze_node.input[0]]
+        outputs = [matmul.output[0]]
+        rpb_node = helper.make_node(
+            "RelativePositionBias",
+            inputs=inputs,
+            outputs=outputs,
+            name=self.model.create_node_name("RelativePositionBias", name_prefix=node_name_prefix),
+        )
+        rpb_node.domain = "com.microsoft"
+        rpb_node.attribute.extend([helper.make_attribute("max_distance", self.max_distance)])
+        rpb_node.attribute.extend([helper.make_attribute("is_bidirectional", self.is_bidirectional)])\
+
+        print("RPB Node = ", rpb_node)
+
+        self.nodes_to_add.append(rpb_node)
+        self.node_name_to_graph_name[rpb_node.name] = self.this_graph_name

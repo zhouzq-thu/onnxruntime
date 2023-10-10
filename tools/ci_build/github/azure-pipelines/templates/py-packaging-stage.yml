@@ -328,7 +328,7 @@ stages:
           EP_NAME: directml
 
   - ${{ if eq(parameters.enable_mac_cpu, true) }}:
-      - template: py-linux.yml
+      - template: py-macos.yml
         parameters:
           arch: 'x86_64'
           extra_build_arg: ${{ parameters.build_py_parameters }}
@@ -336,7 +336,7 @@ stages:
 
 
   - ${{ if eq(parameters.enable_mac_silicon, true) }}:
-      - template: py-linux.yml
+      - template: py-macos.yml
         parameters:
           arch: 'arm64'
           extra_build_arg: ${{ parameters.build_py_parameters }}

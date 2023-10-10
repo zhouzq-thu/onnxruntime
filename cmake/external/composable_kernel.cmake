@@ -1,10 +1,13 @@
+set(composable_kernel_URL https://github.com/cloudhan/composable_kernel.git)
+set(composable_kernel_TAG 4c7a5a388af5a9d76a1af65c2debdd53826ae864)
+
 set(PATCH ${PROJECT_SOURCE_DIR}/patches/composable_kernel/Fix_Clang_Build.patch)
 
 include(FetchContent)
 FetchContent_Declare(composable_kernel
-  URL ${DEP_URL_composable_kernel}
-  URL_HASH SHA1=${DEP_SHA1_composable_kernel}
-  PATCH_COMMAND ${Patch_EXECUTABLE} --binary --ignore-whitespace -p1 < ${PATCH}
+  GIT_REPOSITORY ${composable_kernel_URL}
+  GIT_TAG        ${composable_kernel_TAG}
+  PATCH_COMMAND  git apply --reverse --check ${PATCH} || git apply --ignore-space-change --ignore-whitespace ${PATCH}
 )
 
 FetchContent_GetProperties(composable_kernel)
@@ -19,6 +22,7 @@ if(NOT composable_kernel_POPULATED)
   add_library(onnxruntime_composable_kernel_includes INTERFACE)
   target_include_directories(onnxruntime_composable_kernel_includes INTERFACE
     ${composable_kernel_SOURCE_DIR}/include
-    ${composable_kernel_SOURCE_DIR}/library/include)
+    ${composable_kernel_SOURCE_DIR}/library/include
+    ${composable_kernel_BINARY_DIR}/include)
   target_compile_definitions(onnxruntime_composable_kernel_includes INTERFACE __fp32__ __fp16__ __bf16__)
 endif()

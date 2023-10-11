@@ -45,8 +45,8 @@ stages:
 
 - stage: ReactNative_CI
   displayName: React Native CI
-  dependsOn:
-  - Build_Android_AAR
+  # dependsOn:
+  # - Build_Android_AAR
   jobs:
   - job: ReactNative_CI
     pool:
@@ -61,6 +61,7 @@ stages:
     timeoutInMinutes: 180
     steps:
     - script: |
+        set -e -x
         python3 tools/python/run_android_emulator.py \
           --android-sdk-root $(ANDROID_SDK_ROOT) \
           --create-avd --system-image "system-images;android-30;default;x86_64"
@@ -72,6 +73,7 @@ stages:
       failOnStderr: false
 
     - script: |
+        set -e -x
         python3 tools/python/run_android_emulator.py \
           --android-sdk-root $(ANDROID_SDK_ROOT) \
           --start --emulator-extra-args="-partition-size 4096 -verbose" \

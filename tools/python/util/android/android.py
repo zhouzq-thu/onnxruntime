@@ -107,10 +107,13 @@ def start_emulator(
             "4096",
             "-timezone",
             "America/Los_Angeles",
-            "-no-snapshot",
+            "-no-snapstorage",
             "-no-audio",
             "-no-boot-anim",
             "-no-window",
+            "-delay-adb",
+#            "-no-accel",
+#            "-wipe-data",
         ]
         if extra_args is not None:
             emulator_args += extra_args

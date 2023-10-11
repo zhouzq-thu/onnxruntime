@@ -70,6 +70,7 @@ def get_inputs(args: argparse.Namespace):
             past_seq_len=0,
             seq_len=args.sequence_length,
             use_fp16=args.use_fp16,
+            share_buffer=args.share_buffer
         )
         iter_inputs = get_msft_sample_inputs(
             args.config,
@@ -77,6 +78,7 @@ def get_inputs(args: argparse.Namespace):
             past_seq_len=args.sequence_length,
             seq_len=1,
             use_fp16=args.use_fp16,
+            share_buffer=args.share_buffer
         )
 
     else:
@@ -340,10 +342,19 @@ def run_ort_inference(args, init_inputs, iter_inputs, model):
         # Add IO bindings for non-CPU execution providers
         if args.device != "cpu":
             io_binding = model.io_binding()
-            for k, v in inputs.items():
-                io_binding.bind_cpu_input(k, v)
-            for output in model.get_outputs():
-                io_binding.bind_output(output.name, device_type=args.device, device_id=args.device_id)
+            if args.share_buffer:
+                for k, v in inputs.items():
+                    io_binding.bind_ortvalue_input(k, v)
+                    if k.endswith('cache'):
+                        io_binding.bind_ortvalue_output(k.replace('cache', 'out'), v)
+                for output in model.get_outputs():
+                    if not output.name.endswith('out'):
+                        io_binding.bind_output(output.name, device_type=args.device, device_id=args.device_id)
+            else:
+                for k, v in inputs.items():
+                    io_binding.bind_cpu_input(k, v)
+                for output in model.get_outputs():
+                    io_binding.bind_output(output.name, device_type=args.device, device_id=args.device_id)
             return io_binding
 
         return inputs
@@ -482,6 +493,8 @@ def get_args():
     parser.add_argument("--pt-num-rows", type=int, default=1000, help="Number of rows for PyTorch profiler to display")
     parser.add_argument("--verbose", default=False, action="store_true")
     parser.add_argument("--log-folder", type=str, default=os.path.join("."), help="Folder to cache log files")
+    parser.add_argument("--share_buffer", default=False, action="store_true")
+
 
     args = parser.parse_args()
 

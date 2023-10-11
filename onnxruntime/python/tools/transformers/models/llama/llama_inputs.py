@@ -3,6 +3,7 @@ from typing import List, Tuple
 import numpy as np
 import torch
 from transformers import LlamaConfig
+import onnxruntime as ort
 
 
 # Get position_ids from attention_mask
@@ -101,7 +102,7 @@ def convert_inputs_for_ort(pt_inputs: dict, use_fp16: bool):
 
 
 # Inputs for Microsoft export from https://github.com/microsoft/Llama-2-Onnx
-def get_msft_sample_inputs(config: LlamaConfig, batch_size: int, past_seq_len: int, seq_len: int, use_fp16: bool):
+def get_msft_sample_inputs(config: LlamaConfig, batch_size: int, past_seq_len: int, seq_len: int, use_fp16: bool, share_buffer: bool):
     np_dtype = np.float16 if use_fp16 else np.float32
     head_size = config.hidden_size // config.num_attention_heads
     max_seq_len = 2048
@@ -117,13 +118,24 @@ def get_msft_sample_inputs(config: LlamaConfig, batch_size: int, past_seq_len: i
     #     ).astype(np_dtype),
     #     "pos": np.array(past_seq_len, dtype=np.int64),
     # }
-    ort_inputs = {
-        "x": np.random.rand(batch_size, seq_len, config.hidden_size).astype(np_dtype),
-        "attn_mask": (-10000 * np.triu(np.ones((batch_size, max_seq_len, max_seq_len), dtype=np.int32), k=1)).astype(np.int32),
-        "pos": np.array(past_seq_len, dtype=np.int64),
-    }
-    for i in range(config.num_hidden_layers):
-        ort_inputs.update({f"k_{i}_cache": np.random.rand(batch_size, config.num_attention_heads, past_seq_len, head_size).astype(np_dtype)})
-        ort_inputs.update({f"v_{i}_cache": np.random.rand(batch_size, config.num_attention_heads, past_seq_len, head_size).astype(np_dtype)})
+
+    if share_buffer:
+        ort_inputs = {
+            "x": ort.OrtValue.ortvalue_from_numpy(np.random.rand(batch_size, seq_len, config.hidden_size).astype(np_dtype), "cuda"),
+            "attn_mask": ort.OrtValue.ortvalue_from_numpy((-10000 * np.triu(np.ones((batch_size, max_seq_len, max_seq_len), dtype=np.int32), k=1)).astype(np.int32), "cuda"),
+            "pos": ort.OrtValue.ortvalue_from_numpy(np.array(past_seq_len, dtype=np.int64), "cpu"),
+        }
+        for i in range(config.num_hidden_layers):
+            ort_inputs.update({f"k_{i}_cache": ort.OrtValue.ortvalue_from_numpy(np.random.rand(batch_size, config.num_attention_heads, max_seq_len, head_size).astype(np_dtype), "cuda")})
+            ort_inputs.update({f"v_{i}_cache": ort.OrtValue.ortvalue_from_numpy(np.random.rand(batch_size, config.num_attention_heads, max_seq_len, head_size).astype(np_dtype), "cuda")})
+    else:
+        ort_inputs = {
+            "x": np.random.rand(batch_size, seq_len, config.hidden_size).astype(np_dtype),
+            "attn_mask": (-10000 * np.triu(np.ones((batch_size, max_seq_len, max_seq_len), dtype=np.int32), k=1)).astype(np.int32),
+            "pos": np.array(past_seq_len, dtype=np.int64),
+        }
+        for i in range(config.num_hidden_layers):
+            ort_inputs.update({f"k_{i}_cache": np.random.rand(batch_size, config.num_attention_heads, past_seq_len, head_size).astype(np_dtype)})
+            ort_inputs.update({f"v_{i}_cache": np.random.rand(batch_size, config.num_attention_heads, past_seq_len, head_size).astype(np_dtype)})
 
     return ort_inputs

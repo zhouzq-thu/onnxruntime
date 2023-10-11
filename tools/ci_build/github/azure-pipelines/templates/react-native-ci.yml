@@ -186,37 +186,6 @@ stages:
       displayName: yarn js/react_native
 
     - script: |
-        python3 tools/python/run_android_emulator.py \
-          --android-sdk-root $(ANDROID_SDK_ROOT) \
-          --create-avd --system-image "system-images;android-30;default;x86_64" \
-          --start --emulator-extra-args="-partition-size 4096 -verbose" \
-          --emulator-pid-file $(Build.BinariesDirectory)/emulator.pid
-      displayName: Start Android Emulator
-
-    - script: |
-        xcrun simctl create iPhoneRNTest com.apple.CoreSimulator.SimDeviceType.iPhone-13
-      workingDirectory: '$(Build.SourcesDirectory)/js/react_native/e2e/ios'
-      displayName: Start iOS Simulator
-
-    - template: android-dump-logs-from-steps.yml
-      parameters:
-        steps:
-        - task: Gradle@3
-          inputs:
-            gradleWrapperFile: '$(Build.SourcesDirectory)/js/react_native/android/gradlew'
-            workingDirectory: '$(Build.SourcesDirectory)/js/react_native/android'
-            options: '--stacktrace'
-            tasks: 'connectedDebugAndroidTest'
-            publishJUnitResults: true
-            testResultsFiles: '**/TEST-*.xml'
-            testRunTitle: 'React Native Android Instrumented Test results'
-            javaHomeOption: 'path'
-            jdkDirectory: '$(JAVA_HOME_11_X64)'
-            sonarQubeRunAnalysis: false
-            spotBugsAnalysis: false
-          displayName: Run React Native Android Instrumented Tests
-
-    - script: |
         # Mobile build:
         # ORT_MOBILE_C_LOCAL_POD_PATH=$(Build.BinariesDirectory)/staging/onnxruntime-mobile-c \
         ORT_C_LOCAL_POD_PATH=$(Build.BinariesDirectory)/staging/onnxruntime-c \
@@ -224,29 +193,13 @@ stages:
       workingDirectory: '$(Build.SourcesDirectory)/js/react_native/ios'
       displayName: Pod install for onnxruntime react native ios bridge library
 
-    - task: Xcode@5
-      inputs:
-        actions: 'test'
-        configuration: 'Debug'
-        sdk: 'iphonesimulator'
-        xcWorkspacePath: '$(Build.SourcesDirectory)/js/react_native/ios/OnnxruntimeModule.xcworkspace'
-        scheme: 'OnnxruntimeModuleTest'
-        packageApp: false
-        destinationPlatformOption: 'iOS'
-        destinationSimulators: 'iPhone 13,OS=latest'
-        workingDirectory: '$(Build.SourcesDirectory)/js/react_native/ios'
-        xcprettyArgs: '--output build/reports/test-results.xml'
-        publishJUnitResults: true
-        testRunTitle: 'React Native iOS Instrumented Test Results'
-      displayName: Run React Native iOS Instrumented Tests
-
-    - task: PublishTestResults@2
-      inputs:
-        testResultsFiles: '$(Build.SourcesDirectory)/js/react_native/ios/build/reports/test-results.xml'
-        failTaskOnFailedTests: true
-        testRunTitle: 'React Native iOS Instrumented Test results'
-      condition: succeededOrFailed()
-      displayName: Publish React Native iOS Instrumented Test Results
+    - script: |
+        # Mobile build:
+        # ORT_MOBILE_C_LOCAL_POD_PATH=$(Build.BinariesDirectory)/staging/onnxruntime-mobile-c \
+        ORT_C_LOCAL_POD_PATH=$(Build.BinariesDirectory)/staging/onnxruntime-c \
+        pod install
+      workingDirectory: '$(Build.SourcesDirectory)/js/react_native/e2e/ios'
+      displayName: Pod install for onnxruntime react native ios e2e tests
 
     - task: PowerShell@2
       inputs:
@@ -266,14 +219,6 @@ stages:
         yarn
       workingDirectory: '$(Build.SourcesDirectory)/js/react_native/e2e'
       displayName: Bootstrap Android and iOS e2e tests
-
-    - script: |
-        # Mobile build:
-        # ORT_MOBILE_C_LOCAL_POD_PATH=$(Build.BinariesDirectory)/staging/onnxruntime-mobile-c \
-        ORT_C_LOCAL_POD_PATH=$(Build.BinariesDirectory)/staging/onnxruntime-c \
-        pod install
-      workingDirectory: '$(Build.SourcesDirectory)/js/react_native/e2e/ios'
-      displayName: Pod install for onnxruntime react native ios e2e tests
 
     - script: |
         yarn add --dev jest-junit
@@ -302,10 +247,66 @@ stages:
       displayName: Build React Native Detox Android e2e Tests
 
     - script: |
+        detox build --configuration ios.sim.release
+      workingDirectory: '$(Build.SourcesDirectory)/js/react_native/e2e'
+      displayName: Build React Native Detox iOS e2e Tests
+
+    #
+    # Unit tests and E2E tests with Android emulator
+    #
+    - script: |
+        python3 tools/python/run_android_emulator.py \
+          --android-sdk-root $(ANDROID_SDK_ROOT) \
+          --create-avd --system-image "system-images;android-30;default;x86_64"
+      displayName: Create Android Emulator
+
+    - script: |
+        cat $(Build.BinariesDirectory)/emulator.pid
+      displayName: Check emulator.pid does not exist
+      failOnStderr: false
+
+    - script: |
+        python3 tools/python/run_android_emulator.py \
+          --android-sdk-root $(ANDROID_SDK_ROOT) \
+          --start --emulator-extra-args="-partition-size 4096 -verbose" \
+          --emulator-pid-file $(Build.BinariesDirectory)/emulator.pid
+        echo "Emulator PID:"
+        cat $(Build.BinariesDirectory)/emulator.pid
+      displayName: Start Android Emulator
+
+    - template: android-dump-logs-from-steps.yml
+      parameters:
+        steps:
+        - task: Gradle@3
+          inputs:
+            gradleWrapperFile: '$(Build.SourcesDirectory)/js/react_native/android/gradlew'
+            workingDirectory: '$(Build.SourcesDirectory)/js/react_native/android'
+            options: '--stacktrace'
+            tasks: 'connectedDebugAndroidTest'
+            publishJUnitResults: true
+            testResultsFiles: '**/TEST-*.xml'
+            testRunTitle: 'React Native Android Instrumented Test results'
+            javaHomeOption: 'path'
+            jdkDirectory: '$(JAVA_HOME_11_X64)'
+            sonarQubeRunAnalysis: false
+            spotBugsAnalysis: false
+          displayName: Run React Native Android Instrumented Tests
+
+    - script: |
         JEST_JUNIT_OUTPUT_FILE=$(Build.SourcesDirectory)/js/react_native/e2e/android-test-results.xml \
         detox test --record-logs all --configuration android.emu.release
       workingDirectory: '$(Build.SourcesDirectory)/js/react_native/e2e'
       displayName: Run React Native Detox Android e2e Tests
+
+    - script: |
+        echo "Emulator PID:"
+        cat $(Build.BinariesDirectory)/emulator.pid
+        python3 tools/python/run_android_emulator.py \
+          --android-sdk-root $(ANDROID_SDK_ROOT) \
+          --stop \
+          --emulator-pid-file $(Build.BinariesDirectory)/emulator.pid
+      displayName: Stop Android Emulator
+      condition: always()
 
     - task: PublishTestResults@2
       inputs:
@@ -315,16 +316,49 @@ stages:
       condition: succeededOrFailed()
       displayName: Publish React Native Detox Android e2e Test Results
 
+    #
+    # Unit tests and E2E tests with iOS simulator
+    #
     - script: |
-        detox build --configuration ios.sim.release
-      workingDirectory: '$(Build.SourcesDirectory)/js/react_native/e2e'
-      displayName: Build React Native Detox iOS e2e Tests
+        xcrun simctl create iPhoneRNTest com.apple.CoreSimulator.SimDeviceType.iPhone-13
+      workingDirectory: '$(Build.SourcesDirectory)/js/react_native/e2e/ios'
+      displayName: Start iOS Simulator
+
+    - task: Xcode@5
+      inputs:
+        actions: 'test'
+        configuration: 'Debug'
+        sdk: 'iphonesimulator'
+        xcWorkspacePath: '$(Build.SourcesDirectory)/js/react_native/ios/OnnxruntimeModule.xcworkspace'
+        scheme: 'OnnxruntimeModuleTest'
+        packageApp: false
+        destinationPlatformOption: 'iOS'
+        destinationSimulators: 'iPhone 13,OS=latest'
+        workingDirectory: '$(Build.SourcesDirectory)/js/react_native/ios'
+        xcprettyArgs: '--output build/reports/test-results.xml'
+        publishJUnitResults: true
+        testRunTitle: 'React Native iOS Instrumented Test Results'
+      displayName: Run React Native iOS Instrumented Tests
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFiles: '$(Build.SourcesDirectory)/js/react_native/ios/build/reports/test-results.xml'
+        failTaskOnFailedTests: true
+        testRunTitle: 'React Native iOS Instrumented Test results'
+      condition: succeededOrFailed()
+      displayName: Publish React Native iOS Instrumented Test Results
 
     - script: |
         JEST_JUNIT_OUTPUT_FILE=$(Build.SourcesDirectory)/js/react_native/e2e/ios-test-results.xml \
         detox test --record-logs all --configuration ios.sim.release
       workingDirectory: '$(Build.SourcesDirectory)/js/react_native/e2e'
       displayName: Run React Native Detox iOS e2e Tests
+
+    - script: |
+        xcrun simctl delete iPhoneRNTest
+      workingDirectory: '$(Build.SourcesDirectory)/js/react_native/e2e/ios'
+      displayName: Stop iOS Simulator
+      condition: always()
 
     - task: PublishTestResults@2
       inputs:
@@ -340,20 +374,6 @@ stages:
         targetPath: '$(Build.SourcesDirectory)/js/react_native/e2e/artifacts'
       condition: succeededOrFailed()
       displayName: Publish React Native Detox E2E test logs
-
-    - script: |
-        python3 tools/python/run_android_emulator.py \
-          --android-sdk-root $(ANDROID_SDK_ROOT) \
-          --stop \
-          --emulator-pid-file $(Build.BinariesDirectory)/emulator.pid
-      displayName: Stop Android Emulator
-      condition: always()
-
-    - script: |
-        xcrun simctl delete iPhoneRNTest
-      workingDirectory: '$(Build.SourcesDirectory)/js/react_native/e2e/ios'
-      displayName: Stop iOS Simulator
-      condition: always()
 
     - script: |
         git restore .

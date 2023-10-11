@@ -5,7 +5,6 @@ import collections
 import contextlib
 import datetime
 import os
-import psutil
 import shutil
 import signal
 import subprocess
@@ -92,6 +91,9 @@ def _stop_process(proc: subprocess.Popen):
 
 
 def _stop_process_with_pid(pid: int):
+    # minimize scope of external module usage 
+    import psutil
+
     if psutil.pid_exists(pid):
         process = psutil.Process(pid)
         _log.debug(f"Stopping process - pid: {pid}")

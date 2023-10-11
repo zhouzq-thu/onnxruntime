@@ -62,6 +62,11 @@ stages:
     steps:
     - script: |
         set -e -x
+        python3 -m pip install psutil
+      displayName: Install psutil for emulator shutdown by run_android_emulator.py
+
+    - script: |
+        set -e -x
         python3 tools/python/run_android_emulator.py \
           --android-sdk-root $(ANDROID_SDK_ROOT) \
           --create-avd --system-image "system-images;android-30;default;x86_64"

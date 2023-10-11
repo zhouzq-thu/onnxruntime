@@ -5,7 +5,7 @@ import collections
 import contextlib
 import datetime
 import os
-# import psutil
+import psutil
 import shutil
 import signal
 import subprocess
@@ -92,19 +92,15 @@ def _stop_process(proc: subprocess.Popen):
 
 
 def _stop_process_with_pid(pid: int):
-    # try:
-    #     process = psutil.Process(pid)
-    # except psutil.Error as error:  # includes NoSuchProcess error
-    #     return
-    #
-    # if psutil.pid_exists(pid) and process.status() == psutil.STATUS_RUNNING:
-
-    # not attempting anything fancier than just sending _stop_signal for now
-    _log.debug(f"Stopping process - pid: {pid}")
-    try:
-        os.kill(pid, _stop_signal)
-    except OSError as e:
-        print(f"Error killing pid. May not have existed. {e}")
+    if psutil.pid_exists(pid):
+        process = psutil.Process(pid)
+        _log.debug(f"Stopping process - pid: {pid}")
+        process.terminate()
+        try:
+            process.wait(60)
+        except psutil.TimeoutExpired:
+            print("Process did not terminate within 60 seconds. Killing.")
+            process.kill()
 
 
 def start_emulator(

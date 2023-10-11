@@ -92,15 +92,19 @@ def _stop_process(proc: subprocess.Popen):
 
 
 def _stop_process_with_pid(pid: int):
-    try:
-        process = psutil.Process(pid)
-    except psutil.Error as error:  # includes NoSuchProcess error
-        return
+    # try:
+    #     process = psutil.Process(pid)
+    # except psutil.Error as error:  # includes NoSuchProcess error
+    #     return
+    #
+    # if psutil.pid_exists(pid) and process.status() == psutil.STATUS_RUNNING:
 
-    if psutil.pid_exists(pid) and process.status() == psutil.STATUS_RUNNING:
-        # not attempting anything fancier than just sending _stop_signal for now
-        _log.debug(f"Stopping process - pid: {pid}")
+    # not attempting anything fancier than just sending _stop_signal for now
+    _log.debug(f"Stopping process - pid: {pid}")
+    try:
         os.kill(pid, _stop_signal)
+    except OSError as e:
+        print(f"Error killing pid. May not have existed. {e}")
 
 
 def start_emulator(

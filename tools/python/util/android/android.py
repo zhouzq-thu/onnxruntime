@@ -13,8 +13,9 @@ import typing
 
 from ..platform_helpers import is_windows
 from ..run import run
+from ..logger import get_logger
 
-_log = logging.getLogger("util.android")
+_log = get_logger("util.android")
 
 
 SdkToolPaths = collections.namedtuple("SdkToolPaths", ["emulator", "adb", "sdkmanager", "avdmanager"])
@@ -117,6 +118,8 @@ def start_emulator(
         ]
         if extra_args is not None:
             emulator_args += extra_args
+
+        print("Emulator args: " + ", ".join(emulator_args))
 
         emulator_process = emulator_stack.enter_context(_start_process(*emulator_args))
         emulator_stack.callback(_stop_process, emulator_process)

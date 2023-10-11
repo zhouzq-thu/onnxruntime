@@ -62,6 +62,8 @@ stages:
     steps:
     - script: |
         set -e -x
+        /Users/runner/Library/Android/sdk/tools/emulator --version
+        /Users/runner/Library/Android/sdk/tools/adb --version
         python3 tools/python/run_android_emulator.py \
           --android-sdk-root $(ANDROID_SDK_ROOT) \
           --create-avd --system-image "system-images;android-30;default;x86_64"

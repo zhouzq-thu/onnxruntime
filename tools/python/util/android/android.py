@@ -3,8 +3,9 @@
 
 import collections
 import contextlib
-import logging
+import datetime
 import os
+import psutil
 import shutil
 import signal
 import subprocess
@@ -91,9 +92,15 @@ def _stop_process(proc: subprocess.Popen):
 
 
 def _stop_process_with_pid(pid: int):
-    # not attempting anything fancier than just sending _stop_signal for now
-    _log.debug(f"Stopping process - pid: {pid}")
-    os.kill(pid, _stop_signal)
+    try:
+        process = psutil.Process(pid)
+    except psutil.Error as error:  # includes NoSuchProcess error
+        return
+
+    if psutil.pid_exists(pid) and process.status() == psutil.STATUS_RUNNING:
+        # not attempting anything fancier than just sending _stop_signal for now
+        _log.debug(f"Stopping process - pid: {pid}")
+        os.kill(pid, _stop_signal)
 
 
 def start_emulator(
@@ -110,11 +117,11 @@ def start_emulator(
             "America/Los_Angeles",
             "-no-snapstorage",
             "-no-audio",
-            "-no-boot-anim",
             "-no-window",
+            "-no-boot-anim",
             "-delay-adb",
-#            "-no-accel",
-#            "-wipe-data",
+            "-gpu",
+            "guest",
         ]
         if extra_args is not None:
             emulator_args += extra_args
@@ -124,18 +131,23 @@ def start_emulator(
         emulator_process = emulator_stack.enter_context(_start_process(*emulator_args))
         emulator_stack.callback(_stop_process, emulator_process)
 
+        # we're specifying -delay-adb so if that works correctly as soon as an adb command completes we should be good
         waiter_process = waiter_stack.enter_context(
             _start_process(
                 sdk_tool_paths.adb,
                 "wait-for-device",
                 "shell",
-                "while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done; input keyevent 82",
+                # "while [[ -z $(getprop sys.boot_completed) | tr -d '\r' ]]; do echo 'waiting'; sleep 10; done; input keyevent 82",
+                "ls /data/local/tmp",
             )
         )
+
         waiter_stack.callback(_stop_process, waiter_process)
 
-        # poll subprocesses
-        sleep_interval_seconds = 1
+        # poll subprocesses. allow 15 minutes for startup
+        sleep_interval_seconds = 5
+        end_time = datetime.datetime.now() + datetime.timedelta(minutes=15)
+
         while True:
             waiter_ret, emulator_ret = waiter_process.poll(), emulator_process.poll()
 
@@ -148,10 +160,14 @@ def start_emulator(
                     break
                 raise RuntimeError(f"Waiter process exited with return code: {waiter_ret}")
 
+            if datetime.datetime.now() > end_time:
+                raise RuntimeError("Emulator startup timeout")
+
             time.sleep(sleep_interval_seconds)
 
         # emulator is ready now
         emulator_stack.pop_all()
+
         return emulator_process
 
 

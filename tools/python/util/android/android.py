@@ -134,8 +134,6 @@ def start_emulator(
         if extra_args is not None:
             emulator_args += extra_args
 
-        print("Emulator args: " + ", ".join(emulator_args))
-
         emulator_process = emulator_stack.enter_context(_start_process(*emulator_args))
         emulator_stack.callback(_stop_process, emulator_process)
 
@@ -152,9 +150,9 @@ def start_emulator(
 
         waiter_stack.callback(_stop_process, waiter_process)
 
-        # poll subprocesses. allow 20 minutes for startup as some CIs are slow
-        # TODO: Make timeout configurable if needed.
-        sleep_interval_seconds = 5
+        # poll subprocesses. 
+        # allow 20 minutes for startup as some CIs are slow. TODO: Make timeout configurable if needed.
+        sleep_interval_seconds = 10
         end_time = datetime.datetime.now() + datetime.timedelta(minutes=20)
 
         while True:

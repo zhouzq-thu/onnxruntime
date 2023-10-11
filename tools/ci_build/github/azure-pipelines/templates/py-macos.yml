@@ -58,7 +58,7 @@ jobs:
       do
         PYTHON_EXE=$PYTHON_DIR/x64/bin/python
         rm -rf $(Build.BinariesDirectory)/${{ parameters.cmake_build_type }}
-        ${PYTHON_EXE} -m pip install numpy==1.24.2
+        ${PYTHON_EXE} -m pip install numpy==1.24.2 packaging setuptools
         ${PYTHON_EXE} $(Build.SourcesDirectory)/tools/ci_build/build.py --build_dir $(Build.BinariesDirectory) --use_coreml --skip_submodule_sync --parallel --config ${{ parameters.cmake_build_type }} --update --build --cmake_extra_defines CMAKE_OSX_ARCHITECTURES=${{ parameters.arch }} --build_wheel ${{ parameters.extra_build_arg }}
         cp $(Build.BinariesDirectory)/${{ parameters.cmake_build_type }}/dist/*.whl /build/dist
       done      

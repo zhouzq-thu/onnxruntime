@@ -101,6 +101,9 @@ def _stop_process_with_pid(pid: int):
         except psutil.TimeoutExpired:
             print("Process did not terminate within 60 seconds. Killing.")
             process.kill()
+            time.sleep(10)
+            if psutil.pid_exists(pid):
+                print(f"Process still exists. State:{process.status()}")
 
 
 def start_emulator(
@@ -117,11 +120,16 @@ def start_emulator(
             "America/Los_Angeles",
             "-no-snapstorage",
             "-no-audio",
-            "-no-window",
+            # allow a window so we can potentially do something like this in a CI to capture the desktop and the
+            # emulator screen
+            #   screencapture screenshot.jpg
+            #   $(ANDROID_SDK_HOME)/platform-tools/adb exec-out screencap -p > emulator.png
+            # and publish screenshot.jpg and emulator.png as artifacts
+            # "-no-window",
             "-no-boot-anim",
-            "-delay-adb",
             "-gpu",
             "guest",
+            "-delay-adb",
         ]
         if extra_args is not None:
             emulator_args += extra_args
@@ -144,9 +152,10 @@ def start_emulator(
 
         waiter_stack.callback(_stop_process, waiter_process)
 
-        # poll subprocesses. allow 15 minutes for startup
+        # poll subprocesses. allow 20 minutes for startup as some CIs are slow
+        # TODO: Make timeout configurable if needed.
         sleep_interval_seconds = 5
-        end_time = datetime.datetime.now() + datetime.timedelta(minutes=15)
+        end_time = datetime.datetime.now() + datetime.timedelta(minutes=20)
 
         while True:
             waiter_ret, emulator_ret = waiter_process.poll(), emulator_process.poll()

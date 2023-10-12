@@ -60,15 +60,6 @@ stages:
       ORT_CACHE_DIR: '$(Pipeline.Workspace)/ccache_ort'
     timeoutInMinutes: 180
     steps:
-    - template: use-android-emulator.yml
-      parameters:
-        create: true
-        start: true
-
-    - template: use-android-emulator.yml
-      parameters:
-        stop: true
-
     - task: mspremier.PostBuildCleanup.PostBuildCleanup-task.PostBuildCleanup@3
       displayName: Clean Agent Directories
       condition: always()
@@ -263,34 +254,10 @@ stages:
     #
     # Unit tests and E2E tests with Android emulator
     #
-    - script: |
-        set -e -x
-        python3 -m pip install psutil
-      displayName: Install psutil for emulator shutdown by run_android_emulator.py
-
-    - script: |
-        set -e -x
-        python3 tools/python/run_android_emulator.py \
-          --android-sdk-root $(ANDROID_SDK_ROOT) \
-          --create-avd --system-image "system-images;android-30;default;x86_64"
-      displayName: Create Android Emulator
-
-    - script: |
-        if test -f $(Build.BinariesDirectory)/emulator.pid; then
-          echo "Emulator PID file was not expected to exist but does and has pid:"
-          cat $(Build.BinariesDirectory)/emulator.pid
-        fi
-      displayName: Check emulator.pid does not exist
-
-    - script: |
-        set -e -x
-        python3 tools/python/run_android_emulator.py \
-          --android-sdk-root $(ANDROID_SDK_ROOT) \
-          --start --emulator-extra-args="-partition-size 2047 -verbose" \
-          --emulator-pid-file $(Build.BinariesDirectory)/emulator.pid
-        echo "Emulator PID:"
-        cat $(Build.BinariesDirectory)/emulator.pid
-      displayName: Start Android Emulator
+    - template: use-android-emulator.yml
+      parameters:
+        create: true
+        start: true
 
     - template: android-dump-logs-from-steps.yml
       parameters:
@@ -316,15 +283,9 @@ stages:
       workingDirectory: '$(Build.SourcesDirectory)/js/react_native/e2e'
       displayName: Run React Native Detox Android e2e Tests
 
-    - script: |
-        echo "Emulator PID:"
-        cat $(Build.BinariesDirectory)/emulator.pid
-        python3 tools/python/run_android_emulator.py \
-          --android-sdk-root $(ANDROID_SDK_ROOT) \
-          --stop \
-          --emulator-pid-file $(Build.BinariesDirectory)/emulator.pid
-      displayName: Stop Android Emulator
-      condition: always()
+    - template: use-android-emulator.yml
+      parameters:
+        stop: true
 
     - task: PublishTestResults@2
       inputs:

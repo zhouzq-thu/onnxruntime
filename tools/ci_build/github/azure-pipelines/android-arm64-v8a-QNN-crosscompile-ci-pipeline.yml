@@ -85,7 +85,7 @@ jobs:
 
   - script: |
       mkdir -p build_qnn/Release/testdata/QNN/node_tests
-      cp -r cmake/external/onnx//onnx/backend/test/data/node/test_basic_conv_with_padding build_qnn/Release/testdata/QNN/node_tests
+      cp -r cmake/external/onnx/onnx/backend/test/data/node/test_basic_conv_with_padding build_qnn/Release/testdata/QNN/node_tests
     displayName: Initialize test directories
 
   - task: JavaToolInstaller@0
@@ -95,38 +95,21 @@ jobs:
       jdkArchitectureOption: 'x64'
       jdkSourceOption: 'PreInstalled'
 
-  - script: |
-      python3 tools/python/run_android_emulator.py \
-      --android-sdk-root ${ANDROID_SDK_ROOT} \
-      --create-avd --system-image "system-images;android-30;google_apis;arm64-v8a" \
-      --start --emulator-extra-args="-partition-size 4096" \
-      --emulator-pid-file $(Build.BinariesDirectory)/emulator.pid
-    displayName: Start Android emulator
-    enabled: false
-    continueOnError: true
-
-  - script: |
-      $ANDROID_SDK_ROOT/emulator/emulator -list-avds
-    displayName: List emulators
+  - template: use-android-emulator.yml
+    parameters:
+      create: true
+      start: true
 
   - task: CmdLine@2
     inputs:
       script: |
-        ${ANDROID_SDK_ROOT}/platform-tools/adb shell "mkdir /data/local/tmp/qnn"
-        ${ANDROID_SDK_ROOT}/platform-tools/adb push onnx_test_runner /data/local/tmp/qnn
-        ${ANDROID_SDK_ROOT}/platform-tools/adb push testdata/QNN/node_tests/test_basic_conv_with_padding /data/local/tmp/qnn
-        ${ANDROID_SDK_ROOT}/platform-tools/adb shell "/data/local/tmp/qnn/onnx_test_runner -e qnn /data/local/tmp/qnn/test_basic_conv_with_padding"
+        ${ANDROID_SDK_ROOT}/platform-tools/adb push onnx_test_runner /data/local/tmp/
+        ${ANDROID_SDK_ROOT}/platform-tools/adb shell "chmod +x /data/local/tmp/onnx_test_runner"
+        ${ANDROID_SDK_ROOT}/platform-tools/adb push testdata/QNN/node_tests/test_basic_conv_with_padding /data/local/tmp/
+        ${ANDROID_SDK_ROOT}/platform-tools/adb shell "/data/local/tmp/onnx_test_runner -e qnn /data/local/tmp/test_basic_conv_with_padding"
       workingDirectory: build_qnn/Release
-    displayName: Run tests
-    enabled: false
-    continueOnError: true
+    displayName: Run test_basic_conv_with_padding on emulator
 
-  - script: |
-        python3 tools/python/run_android_emulator.py \
-          --android-sdk-root ${ANDROID_SDK_ROOT} \
-          --stop \
-          --emulator-pid-file $(Build.BinariesDirectory)/emulator.pid
-    displayName: Stop Android emulator
-    condition: always()
-    enabled: false
-    continueOnError: true
+  - template: use-android-emulator.yml
+    parameters:
+      stop: true

@@ -31,7 +31,7 @@ def get_sdk_tool_paths(sdk_root: str):
     def resolve_path(dirnames, basename):
         dirnames.insert(0, "")
         for dirname in dirnames:
-            path = shutil.which(os.path.join(dirname, basename))
+            path = shutil.which(os.path.join(os.path.expanduser(dirname), basename))
             if path is not None:
                 path = os.path.realpath(path)
                 _log.debug(f"Found {basename} at {path}")

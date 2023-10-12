@@ -95,26 +95,26 @@ jobs:
       jdkArchitectureOption: 'x64'
       jdkSourceOption: 'PreInstalled'
 
-  # This is commented out for now. The emulator runs correctly and onnx_test_runner is executable but fails when
-  # attempting to use qnn to run the unit test. Maybe some qnn EP parameters need to be provided?
+  # This is commented out for now. The emulator runs correctly, onnx_test_runner is executable, and the test passes
+  # with the CPU EP but returns 139 when attempting to use the QNN EP. Maybe some QNN EP parameters need to be provided?
   #
-  - template: templates/use-android-emulator.yml
-    parameters:
-      create: true
-      start: true
+  # - template: templates/use-android-emulator.yml
+  #   parameters:
+  #     create: true
+  #     start: true
 
-  - task: CmdLine@2
-    inputs:
-      script: |
-        set -e -x
-        ${ANDROID_SDK_ROOT}/platform-tools/adb push onnx_test_runner /data/local/tmp/
-        ${ANDROID_SDK_ROOT}/platform-tools/adb push testdata/QNN/node_tests/test_basic_conv_with_padding /data/local/tmp/
-        ${ANDROID_SDK_ROOT}/platform-tools/adb shell "chmod +x /data/local/tmp/onnx_test_runner"
-        ${ANDROID_SDK_ROOT}/platform-tools/adb shell "/data/local/tmp/onnx_test_runner -v /data/local/tmp/test_basic_conv_with_padding"
-        ${ANDROID_SDK_ROOT}/platform-tools/adb shell "/data/local/tmp/onnx_test_runner -v -e qnn /data/local/tmp/test_basic_conv_with_padding"
-      workingDirectory: build_qnn/Release
-    displayName: Run test_basic_conv_with_padding on emulator
+  # - task: CmdLine@2
+  #   inputs:
+  #     script: |
+  #       set -e -x
+  #       ${ANDROID_SDK_ROOT}/platform-tools/adb push onnx_test_runner /data/local/tmp/
+  #       ${ANDROID_SDK_ROOT}/platform-tools/adb push testdata/QNN/node_tests/test_basic_conv_with_padding /data/local/tmp/
+  #       ${ANDROID_SDK_ROOT}/platform-tools/adb shell "chmod +x /data/local/tmp/onnx_test_runner"
+  #       ${ANDROID_SDK_ROOT}/platform-tools/adb shell "/data/local/tmp/onnx_test_runner -v /data/local/tmp/test_basic_conv_with_padding"
+  #       ${ANDROID_SDK_ROOT}/platform-tools/adb shell "/data/local/tmp/onnx_test_runner -v -e qnn /data/local/tmp/test_basic_conv_with_padding"
+  #     workingDirectory: build_qnn/Release
+  #   displayName: Run test_basic_conv_with_padding on emulator
 
-  - template: templates/use-android-emulator.yml
-    parameters:
-      stop: true
+  # - template: templates/use-android-emulator.yml
+  #   parameters:
+  #     stop: true

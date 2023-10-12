@@ -46,6 +46,7 @@ steps:
       set -e -x
       python3 -m pip install psutil
     displayName: Install psutil for emulator shutdown by run_android_emulator.py
+    condition: always()
 
   - script: |
       if test -f $(Build.BinariesDirectory)/emulator.pid; then

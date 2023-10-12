@@ -1816,7 +1816,7 @@ def run_onnxruntime_tests(args, source_dir, ctest_path, build_dir, configs):
             run_subprocess(ctest_cmd, cwd=cwd, dll_path=dll_path)
             models_dir = os.path.join(cwd, "models")
             print(f"models_dir = {models_dir}")
-            run_subprocess([os.path.join(cwd, config, "onnx_test_runner"), "-j 2", "-e cpu", models_dir], cwd=cwd, dll_path=dll_path)
+            run_subprocess([os.path.join(cwd, config, "onnx_test_runner"), "-j 2", models_dir], cwd=cwd, dll_path=dll_path)
 
         if args.enable_pybind:
             python_path = None

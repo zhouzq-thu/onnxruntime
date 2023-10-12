@@ -11,9 +11,9 @@ import subprocess
 import time
 import typing
 
+from ..logger import get_logger
 from ..platform_helpers import is_windows
 from ..run import run
-from ..logger import get_logger
 
 _log = get_logger("util.android")
 
@@ -91,7 +91,7 @@ def _stop_process(proc: subprocess.Popen):
 
 
 def _stop_process_with_pid(pid: int):
-    # minimize scope of external module usage 
+    # minimize scope of external module usage
     import psutil
 
     if psutil.pid_exists(pid):
@@ -152,7 +152,7 @@ def start_emulator(
 
         waiter_stack.callback(_stop_process, waiter_process)
 
-        # poll subprocesses. 
+        # poll subprocesses.
         # allow 20 minutes for startup as some CIs are slow. TODO: Make timeout configurable if needed.
         sleep_interval_seconds = 10
         end_time = datetime.datetime.now() + datetime.timedelta(minutes=20)

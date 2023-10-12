@@ -45,8 +45,8 @@ stages:
 
 - stage: ReactNative_CI
   displayName: React Native CI
-  dependsOn:
-  - Build_Android_AAR
+  # dependsOn:
+  # - Build_Android_AAR
   jobs:
   - job: ReactNative_CI
     pool:
@@ -60,6 +60,18 @@ stages:
       ORT_CACHE_DIR: '$(Pipeline.Workspace)/ccache_ort'
     timeoutInMinutes: 180
     steps:
+    - template: use-android-emulator.yml
+      parameters:
+        action: create
+
+    - template: use-android-emulator.yml
+      parameters:
+        action: start
+
+    - template: use-android-emulator.yml
+      parameters:
+        action: stop
+
     - task: mspremier.PostBuildCleanup.PostBuildCleanup-task.PostBuildCleanup@3
       displayName: Clean Agent Directories
       condition: always()

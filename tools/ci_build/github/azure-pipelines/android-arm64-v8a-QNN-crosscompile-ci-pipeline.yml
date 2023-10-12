@@ -95,6 +95,9 @@ jobs:
       jdkArchitectureOption: 'x64'
       jdkSourceOption: 'PreInstalled'
 
+  # This is commented out for now. The emulator runs correctly and onnx_test_runner is executable but fails when
+  # attempting to use qnn to run the unit test. Maybe some qnn EP parameters need to be provided?
+  #
   - template: templates/use-android-emulator.yml
     parameters:
       create: true
@@ -108,6 +111,7 @@ jobs:
         ${ANDROID_SDK_ROOT}/platform-tools/adb shell "chmod +x /data/local/tmp/onnx_test_runner"
         ${ANDROID_SDK_ROOT}/platform-tools/adb shell "/data/local/tmp/onnx_test_runner -h"
         ${ANDROID_SDK_ROOT}/platform-tools/adb push testdata/QNN/node_tests/test_basic_conv_with_padding /data/local/tmp/
+        ${ANDROID_SDK_ROOT}/platform-tools/adb shell "/data/local/tmp/onnx_test_runner /data/local/tmp/test_basic_conv_with_padding"
         ${ANDROID_SDK_ROOT}/platform-tools/adb shell "/data/local/tmp/onnx_test_runner -v -e qnn /data/local/tmp/test_basic_conv_with_padding"
       workingDirectory: build_qnn/Release
     displayName: Run test_basic_conv_with_padding on emulator

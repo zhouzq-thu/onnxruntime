@@ -62,15 +62,12 @@ stages:
     steps:
     - template: use-android-emulator.yml
       parameters:
-        action: 'create'
+        create: true
+        start: true
 
     - template: use-android-emulator.yml
       parameters:
-        action: 'start'
-
-    - template: use-android-emulator.yml
-      parameters:
-        action: 'stop'
+        stop: true
 
     - task: mspremier.PostBuildCleanup.PostBuildCleanup-task.PostBuildCleanup@3
       displayName: Clean Agent Directories

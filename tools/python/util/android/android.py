@@ -96,7 +96,7 @@ def _stop_process_with_pid(pid: int):
 
     if psutil.pid_exists(pid):
         process = psutil.Process(pid)
-        _log.debug(f"Stopping process - pid: {pid}")
+        _log.debug(f"Stopping process - pid={pid}")
         process.terminate()
         try:
             process.wait(60)
@@ -106,6 +106,8 @@ def _stop_process_with_pid(pid: int):
             time.sleep(10)
             if psutil.pid_exists(pid):
                 print(f"Process still exists. State:{process.status()}")
+    else:
+        _log.debug(f"No process exists with pid={pid}")
 
 
 def start_emulator(

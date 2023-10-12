@@ -12,7 +12,7 @@ import time
 import typing
 
 from ..logger import get_logger
-from ..platform_helpers import is_macOS, is_windows
+from ..platform_helpers import is_linux, is_windows
 from ..run import run
 
 _log = get_logger("util.android")
@@ -124,19 +124,24 @@ def start_emulator(
             "America/Los_Angeles",
             "-no-snapstorage",
             "-no-audio",
-            # On macOS use a window in the CI so that we can potentially capture the desktop and the emulator screen
-            # and publish screenshot.jpg and emulator.png as artifacts.
-            #   screencapture screenshot.jpg
-            #   $(ANDROID_SDK_HOME)/platform-tools/adb exec-out screencap -p > emulator.png
-            #
-            # On Linux we must use "-no-window" otherwise you'll get
-            #   Fatal: This application failed to start because no Qt platform plugin could be initialized
-            ("" if is_macOS() else "-no-window"),
             "-no-boot-anim",
             "-gpu",
             "guest",
             "-delay-adb",
         ]
+
+        # For Linux CIs we must use "-no-window" otherwise you'll get
+        #   Fatal: This application failed to start because no Qt platform plugin could be initialized
+        #
+        # For macOS CIs use a window so that we can potentially capture the desktop and the emulator screen
+        # and publish screenshot.jpg and emulator.png as artifacts to debug issues.
+        #   screencapture screenshot.jpg
+        #   $(ANDROID_SDK_HOME)/platform-tools/adb exec-out screencap -p > emulator.png
+        #
+        # On Windows it doesn't matter (AFAIK) so allow a window which is nicer for local debugging.
+        if is_linux():
+            emulator_args += "-no-window"
+
         if extra_args is not None:
             emulator_args += extra_args
 

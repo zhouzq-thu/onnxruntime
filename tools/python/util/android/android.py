@@ -12,7 +12,7 @@ import time
 import typing
 
 from ..logger import get_logger
-from ..platform_helpers import is_windows, is_macOS
+from ..platform_helpers import is_macOS, is_windows
 from ..run import run
 
 _log = get_logger("util.android")
@@ -122,11 +122,13 @@ def start_emulator(
             "America/Los_Angeles",
             "-no-snapstorage",
             "-no-audio",
-            # allow a window so we can potentially do something like this in a CI to capture the desktop and the
-            # emulator screen
+            # On macOS use a window in the CI so that we can potentially capture the desktop and the emulator screen
+            # and publish screenshot.jpg and emulator.png as artifacts.
             #   screencapture screenshot.jpg
             #   $(ANDROID_SDK_HOME)/platform-tools/adb exec-out screencap -p > emulator.png
-            # and publish screenshot.jpg and emulator.png as artifacts
+            #
+            # On Linux we must use "-no-window" otherwise you'll get
+            #   Fatal: This application failed to start because no Qt platform plugin could be initialized
             ("" if is_macOS() else "-no-window"),
             "-no-boot-anim",
             "-gpu",
@@ -139,13 +141,12 @@ def start_emulator(
         emulator_process = emulator_stack.enter_context(_start_process(*emulator_args))
         emulator_stack.callback(_stop_process, emulator_process)
 
-        # we're specifying -delay-adb so if that works correctly as soon as an adb command completes we should be good
+        # we're specifying -delay-adb so use a trivial command to check when adb is available.
         waiter_process = waiter_stack.enter_context(
             _start_process(
                 sdk_tool_paths.adb,
                 "wait-for-device",
                 "shell",
-                # "while [[ -z $(getprop sys.boot_completed) | tr -d '\r' ]]; do echo 'waiting'; sleep 10; done; input keyevent 82",
                 "ls /data/local/tmp",
             )
         )
@@ -174,26 +175,35 @@ def start_emulator(
 
             time.sleep(sleep_interval_seconds)
 
-        # emulator is ready now but do one more check
+        # emulator is started
         emulator_stack.pop_all()
 
+        # loop to check for sys.boot_completed being set.
+        # in theory `-delay-adb` should be enough but this extra check seems to be required on Linux CIs.
         while True:
-            getprop_output = subprocess.check_output(
-                [sdk_tool_paths.adb,
-                # "wait-for-device",
+            # looping on device with `while` seems to be flaky so loop here and call getprop once
+            args = [
+                sdk_tool_paths.adb,
                 "shell",
-                # "while [[ -z $(getprop sys.boot_completed) | tr -d '\r' ]]; do echo 'waiting...'; sleep 5; done; input keyevent 82",
-                "getprop sys.boot_completed"],
-                timeout=10
-            )
+                # "while [[ -z $(getprop sys.boot_completed) | tr -d '\r' ]]; do sleep 5; done; input keyevent 82",
+                "getprop sys.boot_completed",
+            ]
 
-            if bytes.decode(getprop_output).strip() == '1':
+            _log.debug(f"Starting process - args: {args}")
+
+            getprop_output = subprocess.check_output(args, timeout=10)
+            getprop_value = bytes.decode(getprop_output).strip()
+
+            if getprop_value == "1":
                 break
 
             elif datetime.datetime.now() > end_time:
                 raise RuntimeError("Emulator startup timeout. sys.boot_completed was not set.")
 
-            time.sleep(10)
+            _log.debug(
+                f"sys.boot_completed='{getprop_value}'. Sleeping for {sleep_interval_seconds} before retrying."
+            )
+            time.sleep(sleep_interval_seconds)
 
         return emulator_process
 

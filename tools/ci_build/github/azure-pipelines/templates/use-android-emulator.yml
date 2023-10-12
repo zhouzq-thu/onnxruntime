@@ -12,7 +12,7 @@ steps:
       --android-sdk-root $(ANDROID_SDK_ROOT) \
       --create-avd --system-image "system-images;android-30;default;x86_64"
   displayName: Create Android Emulator
-  condition: eq(${{ parameters.AndroidNdkVersion }}, 'create')
+  condition: eq(${{ parameters.action }}, 'create')
 
 - script: |
     if test -f $(Build.BinariesDirectory)/emulator.pid; then
@@ -21,7 +21,7 @@ steps:
       exit 1
     fi
   displayName: Check emulator.pid does not exist
-  condition: eq(${{ parameters.AndroidNdkVersion }}, 'start')
+  condition: eq(${{ parameters.action }}, 'start')
 
 - script: |
     set -e -x
@@ -31,13 +31,13 @@ steps:
       --emulator-pid-file $(Build.BinariesDirectory)/emulator.pid
     echo "Emulator PID:"`cat $(Build.BinariesDirectory)/emulator.pid`
   displayName: Start Android Emulator
-  condition: eq(${{ parameters.AndroidNdkVersion }}, 'start')
+  condition: eq(${{ parameters.action }}, 'start')
 
 - script: |
     set -e -x
     python3 -m pip install psutil
   displayName: Install psutil for emulator shutdown by run_android_emulator.py
-  condition: eq(${{ parameters.AndroidNdkVersion }}, 'stop')
+  condition: eq(${{ parameters.action }}, 'stop')
 
 - script: |
     if test -f $(Build.BinariesDirectory)/emulator.pid; then
@@ -51,4 +51,4 @@ steps:
       echo "Emulator PID file was expected to exist but does not."
     fi
   displayName: Stop Android Emulator
-  condition: eq(${{ parameters.AndroidNdkVersion }}, 'stop')
+  condition: eq(${{ parameters.action }}, 'stop')

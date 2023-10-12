@@ -174,8 +174,26 @@ def start_emulator(
 
             time.sleep(sleep_interval_seconds)
 
-        # emulator is ready now
+        # emulator is ready now but do one more check
         emulator_stack.pop_all()
+
+        while True:
+            getprop_output = subprocess.check_output(
+                [sdk_tool_paths.adb,
+                # "wait-for-device",
+                "shell",
+                # "while [[ -z $(getprop sys.boot_completed) | tr -d '\r' ]]; do echo 'waiting...'; sleep 5; done; input keyevent 82",
+                "getprop sys.boot_completed"],
+                timeout=10
+            )
+
+            if bytes.decode(getprop_output).strip() == '1':
+                break
+
+            elif datetime.datetime.now() > end_time:
+                raise RuntimeError("Emulator startup timeout. sys.boot_completed was not set.")
+
+            time.sleep(10)
 
         return emulator_process
 

@@ -89,9 +89,9 @@ jobs:
     displayName: Initialize test directories
 
   - task: JavaToolInstaller@0
-    displayName: Use jdk 8
+    displayName: Use jdk 11
     inputs:
-      versionSpec: '8'
+      versionSpec: '11'
       jdkArchitectureOption: 'x64'
       jdkSourceOption: 'PreInstalled'
 

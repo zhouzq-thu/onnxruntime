@@ -140,7 +140,7 @@ def start_emulator(
         #
         # On Windows it doesn't matter (AFAIK) so allow a window which is nicer for local debugging.
         if is_linux():
-            emulator_args += "-no-window"
+            emulator_args.append("-no-window")
 
         if extra_args is not None:
             emulator_args += extra_args

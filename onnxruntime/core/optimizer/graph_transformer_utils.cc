@@ -133,7 +133,7 @@ InlinedVector<std::unique_ptr<RewriteRule>> GenerateRewriteRules(
       rules.push_back(std::make_unique<ClipQuantFusion>());
       rules.push_back(std::make_unique<ReluQuantFusion>());
 #ifdef ENABLE_TRAINING_TORCH_INTEROP
-      rules.push_back(std::make_unique<PythonOpPriorityRewriter>());
+      // rules.push_back(std::make_unique<PythonOpPriorityRewriter>());
 #endif
       break;
 

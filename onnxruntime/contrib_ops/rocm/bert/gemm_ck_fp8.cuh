@@ -48,9 +48,13 @@ inline __host__ __device__ ck::half_t fast_type_convert<ck::half_t, ck::f8_t>(ck
   return reinterpret_cast<ck::half_t&>(y);
 }
 
-#define PRINTF(...) if (blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 && threadIdx.x == 0&& threadIdx.y == 0&& threadIdx.z == 0) printf(__VA_ARGS__)
+#define PRINTF(...) \
+  if (blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 && threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0) printf(__VA_ARGS__)
 
+template <int VecLen>
 struct Scale {
+  constexpr const static int vec_len = VecLen;
+
   explicit Scale(const float* dev_scale_ptr) : dev_scale_ptr{dev_scale_ptr} {}
   explicit Scale(float host_scale_value) : dev_scale_ptr{nullptr}, scale_value{host_scale_value} {}
 
@@ -60,15 +64,17 @@ struct Scale {
     y = ck::type_convert<ck::half_t>(scale * fast_type_convert<ck::half_t>(x));
   }
 
-  __forceinline__ __host__ __device__ void operator()(ck::half_t& y0, ck::half_t& y1,
-                                                      const ck::f8_t& x0, const ck::f8_t& x1) const {
+  __forceinline__ __host__ __device__ void operator()(ck::half2_t& two_y, const ck::f8x2_t& two_x) const {
     float scale = nullptr == dev_scale_ptr ? scale_value : *dev_scale_ptr;
     constexpr const uint32_t mask = 0x7fff7fff;
     constexpr const uint32_t sign_mask = 0x80008000;
     // constexpr const uint32_t exp_compensate = 0x20002000;  // for float8_e4m3fn
     constexpr const uint32_t exp_compensate = 0x1c001c00;  // for float8_e4m3fnuz
 
-    uchar4 x{0, x0, 0, x1};
+    uchar4 x{0,
+             ck::vector_type<ck::f8_t, 2>(two_x).AsType<ck::f8_t>()(ck::Number<0>{}),
+             0,
+             ck::vector_type<ck::f8_t, 2>(two_x).AsType<ck::f8_t>()(ck::Number<1>{})};
     // PRINTF("%x %x %x %x\n", 0, x0, 0, x1);
     uint32_t x_u32 = reinterpret_cast<uint32_t&>(x);
     // PRINTF("%x\n", x_u32);
@@ -78,8 +84,9 @@ struct Scale {
     // PRINTF("%x\n", v);
     half2 u = scale * reinterpret_cast<half2&>(v);
     // NOTE: don't use u.x, u.y ...
-    y0 = u.data[0];
-    y1 = u.data[1];
+    two_y = {u.data[0], u.data[1]};
+    // ck::vector_type<ck::half_t, 2>(two_y).AsType<ck::half_t>()[ck::Number<0>{}] = u.data[0];
+    // ck::vector_type<ck::half_t, 2>(two_y).AsType<ck::half_t>()[ck::Number<1>{}] = u.data[1];
   }
 
 #if 0
@@ -141,18 +148,6 @@ struct Scale {
   const float* dev_scale_ptr;
   float scale_value;
 };
-
-static_assert(std::is_invocable_r_v<void, Scale,
-                                    ck::half_t&,
-                                    const ck::f8_t&>);
-
-static_assert(std::is_invocable_r_v<void, Scale,
-                                    ck::half_t&, ck::half_t&,
-                                    const ck::f8_t&, const ck::f8_t&>);
-
-static_assert(!std::is_invocable_r_v<void, Scale,
-                                     ck::half_t&, ck::half_t&, ck::half_t&, ck::half_t&,
-                                     const ck::f8_t&, const ck::f8_t&, const ck::f8_t&, const ck::f8_t&>);
 
 struct MacPassThrough {
   __forceinline__ __device__ void operator()(ck::half_t& y, const ck::f8_t& x) const {
@@ -219,19 +214,19 @@ using Nop = ck::tensor_operation::element_wise::PassThrough;
 
 void add_device_gemm_xdl_splitk_f8_f16_f16_mk_kn_mn_instances(
     std::vector<std::unique_ptr<ck::tensor_operation::device::DeviceGemmSplitK<
-        Row, Row, Row, ck::f8_t, ck::half_t, ck::half_t, Scale, Nop, Nop>>>& instances);
+        Row, Row, Row, ck::f8_t, ck::half_t, ck::half_t, Scale<2>, Nop, Nop>>>& instances);
 
 void add_device_gemm_xdl_splitk_f16_f8_f16_mk_kn_mn_instances(
     std::vector<std::unique_ptr<ck::tensor_operation::device::DeviceGemmSplitK<
-        Row, Row, Row, ck::half_t, ck::f8_t, ck::half_t, Nop, Scale, Nop>>>& instances);
+        Row, Row, Row, ck::half_t, ck::f8_t, ck::half_t, Nop, Scale<2>, Nop>>>& instances);
 
 template <typename CKT>
 auto CreateOp(float scale, const float* dev_scale) {
   if constexpr (std::is_same_v<CKT, ck::f8_t>) {
     if (dev_scale != nullptr) {
-      return Scale(dev_scale);
+      return Scale<2>(dev_scale);
     } else {
-      return Scale(scale);
+      return Scale<2>(scale);
     }
   } else {
     return Nop{};
@@ -244,9 +239,9 @@ auto GetCKF8SplitKGemmTypeStringAndOps() {
   using CKTB = typename CKDataTypeAdaptor<TB>::type;
   using CKTC = typename CKDataTypeAdaptor<TC>::type;
 
-  using OpA = std::conditional_t<std::is_same_v<CKTA, ck::f8_t>, Scale, Nop>;
-  using OpB = std::conditional_t<std::is_same_v<CKTB, ck::f8_t>, Scale, Nop>;
-  using OpC = std::conditional_t<std::is_same_v<CKTC, ck::f8_t>, Scale, Nop>;
+  using OpA = std::conditional_t<std::is_same_v<CKTA, ck::f8_t>, Scale<2>, Nop>;
+  using OpB = std::conditional_t<std::is_same_v<CKTB, ck::f8_t>, Scale<2>, Nop>;
+  using OpC = std::conditional_t<std::is_same_v<CKTC, ck::f8_t>, Scale<2>, Nop>;
 
   using DeviceGemm = ck::tensor_operation::device::DeviceGemmSplitK<
       ALayout, BLayout, Row,

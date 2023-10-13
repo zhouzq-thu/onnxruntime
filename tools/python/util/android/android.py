@@ -186,7 +186,7 @@ def start_emulator(
         emulator_stack.pop_all()
 
         # loop to check for sys.boot_completed being set.
-        # in theory `-delay-adb` should be enough but this extra check seems to be required on Linux CIs.
+        # in theory `-delay-adb` should be enough but this extra check seems to be required to be sure.
         while True:
             # looping on device with `while` seems to be flaky so loop here and call getprop once
             args = [
@@ -207,9 +207,7 @@ def start_emulator(
             elif datetime.datetime.now() > end_time:
                 raise RuntimeError("Emulator startup timeout. sys.boot_completed was not set.")
 
-            _log.debug(
-                f"sys.boot_completed='{getprop_value}'. Sleeping for {sleep_interval_seconds} before retrying."
-            )
+            _log.debug(f"sys.boot_completed='{getprop_value}'. Sleeping for {sleep_interval_seconds} before retrying.")
             time.sleep(sleep_interval_seconds)
 
         return emulator_process

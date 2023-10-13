@@ -51,6 +51,10 @@ inline __host__ __device__ ck::half_t fast_type_convert<ck::half_t, ck::f8_t>(ck
 #define PRINTF(...) if (blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 && threadIdx.x == 0&& threadIdx.y == 0&& threadIdx.z == 0) printf(__VA_ARGS__)
 
 struct Scale {
+  constexpr const static bool is_pack2_invocable = true;
+  constexpr const static bool is_pack4_invocable = true;
+  // constexpr const static bool is_pack8_invocable = true;
+
   explicit Scale(const float* dev_scale_ptr) : dev_scale_ptr{dev_scale_ptr} {}
   explicit Scale(float host_scale_value) : dev_scale_ptr{nullptr}, scale_value{host_scale_value} {}
 
@@ -60,38 +64,23 @@ struct Scale {
     y = ck::type_convert<ck::half_t>(scale * fast_type_convert<ck::half_t>(x));
   }
 
-  __forceinline__ __host__ __device__ void operator()(ck::half_t& y0, ck::half_t& y1,
-                                                      const ck::f8_t& x0, const ck::f8_t& x1) const {
+  __forceinline__ __host__ __device__ void operator()(ck::half2_t& ys, const ck::f8x2_t& xs) const {
     float scale = nullptr == dev_scale_ptr ? scale_value : *dev_scale_ptr;
     constexpr const uint32_t mask = 0x7fff7fff;
     constexpr const uint32_t sign_mask = 0x80008000;
     // constexpr const uint32_t exp_compensate = 0x20002000;  // for float8_e4m3fn
     constexpr const uint32_t exp_compensate = 0x1c001c00;  // for float8_e4m3fnuz
 
-    uchar4 x{0, x0, 0, x1};
-    // PRINTF("%x %x %x %x\n", 0, x0, 0, x1);
+    const uchar2& x2_u8 = reinterpret_cast<const uchar2&>(xs);
+    uchar4 x{0, x2_u8.x, 0, x2_u8.y};
     uint32_t x_u32 = reinterpret_cast<uint32_t&>(x);
-    // PRINTF("%x\n", x_u32);
+
     uint32_t exp = (x_u32 & mask) >> 1;
-    // PRINTF("%x\n", exp);
     uint32_t v = (x_u32 & sign_mask) | (exp + exp_compensate);
-    // PRINTF("%x\n", v);
-    half2 u = scale * reinterpret_cast<half2&>(v);
-    // NOTE: don't use u.x, u.y ...
-    y0 = u.data[0];
-    y1 = u.data[1];
+    ys = scale * reinterpret_cast<ck::half2_t&>(v);
   }
 
-#if 0
-  __forceinline__ __host__ __device__ void operator()(ck::half_t& y0, ck::half_t& y1, ck::half_t& y2, ck::half_t& y3,
-                                                      const ck::f8_t& x0, const ck::f8_t& x1, const ck::f8_t& x2, const ck::f8_t& x3) const {
-#if 0
-    float scale = nullptr == dev_scale_ptr ? scale_value : *dev_scale_ptr;
-    y0 = scale * fast_type_convert<ck::half_t>(x0);
-    y1 = scale * fast_type_convert<ck::half_t>(x1);
-    y2 = scale * fast_type_convert<ck::half_t>(x2);
-    y3 = scale * fast_type_convert<ck::half_t>(x3);
-#elif 0
+  __forceinline__ __host__ __device__ void operator()(ck::half4_t& ys, const ck::f8x4_t& xs) const {
     // NOTE: no improvement
     float scale = nullptr == dev_scale_ptr ? scale_value : *dev_scale_ptr;
     constexpr const uint32_t mask = 0x7fff7fff;
@@ -99,60 +88,20 @@ struct Scale {
     // constexpr const uint32_t exp_compensate = 0x20002000;  // for float8_e4m3fn
     constexpr const uint32_t exp_compensate = 0x1c001c00;  // for float8_e4m3fnuz
 
-    uchar4 x_0{0, x0, 0, x1};
-    uchar4 x_1{0, x2, 0, x3};
-    uint32_t x_u32_0 = reinterpret_cast<uint32_t&>(x_0);
-    uint32_t x_u32_1 = reinterpret_cast<uint32_t&>(x_1);
+    uint32_t xs_u32 = reinterpret_cast<const uint32_t&>(xs);
+    uint32_t x_u32_0 = __byte_perm(xs_u32, 0, 0x1504);
+    uint32_t x_u32_1 = __byte_perm(xs_u32, 0, 0x3726);
     uint32_t exp_0 = (x_u32_0 & mask) >> 1;
     uint32_t exp_1 = (x_u32_1 & mask) >> 1;
     uint32_t v_0 = (x_u32_0 & sign_mask) | (exp_0 + exp_compensate);
     uint32_t v_1 = (x_u32_1 & sign_mask) | (exp_1 + exp_compensate);
-    half2 u_0 = scale * reinterpret_cast<half2&>(v_0);
-    half2 u_1 = scale * reinterpret_cast<half2&>(v_1);
-    // NOTE: don't use u.x, u.y ...
-    y0 = u_0.data[0];
-    y1 = u_0.data[1];
-    y2 = u_1.data[0];
-    y3 = u_1.data[1];
-#elif 1
-    // NOTE: no improvement
-    float scale = nullptr == dev_scale_ptr ? scale_value : *dev_scale_ptr;
-    constexpr const uint64_t mask = 0x7fff7fff7fff7fff;
-    constexpr const uint64_t sign_mask = 0x8000800080008000;
-    // constexpr const uint64_t exp_compensate = 0x2000200020002000;  // for float8_e4m3fn
-    constexpr const uint64_t exp_compensate = 0x1c001c001c001c00;  // for float8_e4m3fnuz
-
-    uchar4 x[2]{{0, x0, 0, x1}, {0, x2, 0, x3}};
-    uint64_t x_u64 = reinterpret_cast<uint64_t&>(x);
-    uint64_t exp = (x_u64 & mask) >> 1;
-    uint64_t v = (x_u64 & sign_mask) | (exp + exp_compensate);
-    half2* u = reinterpret_cast<half2*>(&v);
-    half2 w0 = scale * u[0];
-    half2 w1 = scale * u[1];
-    // NOTE: don't use u.x, u.y ...
-    y0 = w0.data[0];
-    y1 = w0.data[1];
-    y2 = w1.data[0];
-    y3 = w1.data[1];
-#endif
+    uint64_t v = v_0 | uint64_t(v_1) << 32;
+    ys = scale * reinterpret_cast<ck::half4_t&>(v);
   }
-#endif
 
   const float* dev_scale_ptr;
   float scale_value;
 };
-
-static_assert(std::is_invocable_r_v<void, Scale,
-                                    ck::half_t&,
-                                    const ck::f8_t&>);
-
-static_assert(std::is_invocable_r_v<void, Scale,
-                                    ck::half_t&, ck::half_t&,
-                                    const ck::f8_t&, const ck::f8_t&>);
-
-static_assert(!std::is_invocable_r_v<void, Scale,
-                                     ck::half_t&, ck::half_t&, ck::half_t&, ck::half_t&,
-                                     const ck::f8_t&, const ck::f8_t&, const ck::f8_t&, const ck::f8_t&>);
 
 struct MacPassThrough {
   __forceinline__ __device__ void operator()(ck::half_t& y, const ck::f8_t& x) const {

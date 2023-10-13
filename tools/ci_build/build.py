@@ -1816,7 +1816,7 @@ def run_onnxruntime_tests(args, source_dir, ctest_path, build_dir, configs):
                     run_subprocess([os.path.join(cwd, exe), '--gtest_filter="*ModelTest*"', test_output], cwd=cwd, dll_path=dll_path)
                 else:
                     run_subprocess([os.path.join(cwd, exe), test_output], cwd=cwd, dll_path=dll_path)
-            run_subprocess([os.path.join(cwd, "onnx_test_runner"), "-j 2 -e cpu"], cwd=cwd, dll_path=dll_path)
+            run_subprocess([os.path.join(cwd, "onnx_test_runner"), "-j 2 -e cpu", models_dir], cwd=cwd, dll_path=dll_path)
         else:
             ctest_cmd = [ctest_path, "--build-config", config, "--verbose", "--timeout", args.test_all_timeout]
             run_subprocess(ctest_cmd, cwd=cwd, dll_path=dll_path)

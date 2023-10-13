@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include "QnnOpDef.h"
+#include "HTP/QnnHtpGraph.h"
 
 #include "core/providers/qnn/builder/op_builder_factory.h"
 #include "core/providers/shared/utils/utils.h"
@@ -99,6 +100,8 @@ Status QnnModel::ComposeGraph(const GraphViewer& graph_viewer,
   const auto& graph_name = graph_viewer.Name();
   ORT_RETURN_IF_ERROR(SetGraphInputOutputInfo(graph_viewer, fused_node));
 
+  qnn::QnnBackendType backend_type = qnn_backend_manager_->GetQnnBackendType();
+
   QnnModelWrapper qnn_model_wrapper = QnnModelWrapper(graph_viewer, logger_,
                                                       qnn_backend_manager_->GetQnnInterface(),
                                                       qnn_backend_manager_->GetQnnBackendHandle(),
@@ -106,10 +109,32 @@ Status QnnModel::ComposeGraph(const GraphViewer& graph_viewer,
                                                       model_output_index_map_,
                                                       initializer_inputs_,
                                                       qnn_backend_manager_->GetQnnBackendType());
-  bool rt = true;
-  rt = qnn_model_wrapper.CreateQnnGraph(qnn_backend_manager_->GetQnnContext(), graph_name);
-  if (!rt) {
-    return ORT_MAKE_STATUS(ONNXRUNTIME, FAIL, "Failed to initialize qnn_model_wrapper.");
+
+  // TODO: Refactor. This is test code that turns on graph optimizations!
+  if (backend_type == qnn::QnnBackendType::HTP) {
+#if 1
+    QnnHtpGraph_CustomConfig_t htp_graph_opt_config = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    htp_graph_opt_config.option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+    htp_graph_opt_config.optimizationOption.type = QNN_HTP_GRAPH_OPTIMIZATION_TYPE_FINALIZE_OPTIMIZATION_FLAG;
+    htp_graph_opt_config.optimizationOption.floatValue = 3;
+
+    QnnGraph_Config_t graph_opt_config = QNN_GRAPH_CONFIG_INIT;
+    graph_opt_config.option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
+    graph_opt_config.customConfig = &htp_graph_opt_config;
+
+    const QnnGraph_Config_t* graph_configs[] = {&graph_opt_config, nullptr};
+#else
+    const QnnGraph_Config_t** graph_configs = nullptr;
+#endif
+    bool rt = qnn_model_wrapper.CreateQnnGraph(qnn_backend_manager_->GetQnnContext(), graph_name, graph_configs);
+    if (!rt) {
+      return ORT_MAKE_STATUS(ONNXRUNTIME, FAIL, "Failed to initialize qnn_model_wrapper.");
+    }
+  } else {
+    bool rt = qnn_model_wrapper.CreateQnnGraph(qnn_backend_manager_->GetQnnContext(), graph_name);
+    if (!rt) {
+      return ORT_MAKE_STATUS(ONNXRUNTIME, FAIL, "Failed to initialize qnn_model_wrapper.");
+    }
   }
 
   // Op builer
@@ -138,7 +163,7 @@ Status QnnModel::ComposeGraph(const GraphViewer& graph_viewer,
 
   ORT_RETURN_IF_NOT(qnn_model_wrapper.ComposeQnnGraph(), "Failed to compose Qnn graph.");
 
-  rt = GetGraphInfoFromModel(qnn_model_wrapper);
+  bool rt = GetGraphInfoFromModel(qnn_model_wrapper);
   if (!rt) {
     return ORT_MAKE_STATUS(ONNXRUNTIME, FAIL, "GetGraphInfoFromModel failed.");
   }

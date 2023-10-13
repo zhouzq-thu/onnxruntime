@@ -529,7 +529,7 @@ def call_python_forward_function(
             # TODO(pengwa): looks like we are assuming all outputs will be either Tensor or None.
             # We should revisit if it is possible to support other types of output, for example int, or, etc.
             # But that might also require some work in backend.
-            torch_nvtx_range_push(f"{func_name.fw}")
+            torch_nvtx_range_push(f"{func_name}.fw")
             result = forward_function(*wrapped_args)
             torch_nvtx_range_pop()
 
@@ -677,7 +677,9 @@ def call_python_backward_function(
                     wrapped_args.append(arg)
 
             # Call Python function.
+            torch_nvtx_range_push(f"{func_name}.bw")
             result = backward_function(*wrapped_args)
+            torch_nvtx_range_pop()
 
             # Extract results as DLPack tensor list.
             if isinstance(result, torch.Tensor):

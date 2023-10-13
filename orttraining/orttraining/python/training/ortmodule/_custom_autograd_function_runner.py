@@ -245,10 +245,9 @@ def _process_inplace_outputs(
 
                 if not copied:
                     # Only need a copy once.
-                    origin_flag = raw_input_tensor.requires_grad
+                    # Inplace copy only happens for non-leaf variable, so we have to set requires_grad to False.
                     raw_input_tensor.requires_grad = False
                     raw_input_tensor.copy_(all_outputs_of_kernel_run[output_index])
-                    raw_input_tensor.requires_grad = origin_flag
                     _log_warning(
                         f"{log_prefix}Copy output tensor {output_index} to raw input tensor {raw_tensor_input_index}. "
                         f"{'Provide output to input reuse mapping to avoid the copy overhead.' if not is_first_time_init else ''}"

@@ -27,6 +27,7 @@ Do not modify directly.*
   * <a href="#com.microsoft.DequantizeWithOrder">com.microsoft.DequantizeWithOrder</a>
   * <a href="#com.microsoft.DynamicQuantizeLSTM">com.microsoft.DynamicQuantizeLSTM</a>
   * <a href="#com.microsoft.DynamicQuantizeMatMul">com.microsoft.DynamicQuantizeMatMul</a>
+  * <a href="#com.microsoft.EPContext">com.microsoft.EPContext</a>
   * <a href="#com.microsoft.EmbedLayerNormalization">com.microsoft.EmbedLayerNormalization</a>
   * <a href="#com.microsoft.ExpandDims">com.microsoft.ExpandDims</a>
   * <a href="#com.microsoft.FastGelu">com.microsoft.FastGelu</a>
@@ -1521,6 +1522,55 @@ This version of the operator has been available since version 1 of the 'com.micr
 </dl>
 
 
+### <a name="com.microsoft.EPContext"></a><a name="com.microsoft.epcontext">**com.microsoft.EPContext**</a>
+
+  Onnx node container for EP context.
+
+#### Version
+
+This version of the operator has been available since version 1 of the 'com.microsoft' operator set.
+
+#### Attributes
+
+<dl>
+<dt><tt>embed_mode</tt> : int</dt>
+<dd>1: indicate ep_cache_context is the context content. 0: indicate ep_cache_context is the file path to the context content.The path is relative to this Onnx file. Default is 1.</dd>
+<dt><tt>ep_cache_context</tt> : string</dt>
+<dd>payload of the execution provider context if embed_mode=1, or path to the context file if embed_mode=0.</dd>
+<dt><tt>ep_sdk_version</tt> : string</dt>
+<dd>(Optional) SDK version used to convert the model.</dd>
+<dt><tt>main_context</tt> : int</dt>
+<dd>Usually each single EPContext associate with a graph partition.But for some case like QNN, it has single EPContext contains all partitions.In that case, the node with ep_cache_context should set main_context=1. Other nodes set main_context=0 and skip ep_cache_context.The path is relative to this Onnx file. Default is 1.</dd>
+<dt><tt>notes</tt> : string</dt>
+<dd>(Optional) Some notes for the model</dd>
+<dt><tt>partition_name</tt> : string</dt>
+<dd>(Optional) partitioned graph name.</dd>
+<dt><tt>source</tt> : string</dt>
+<dd>(Optional) the source used to generate the engine/context cache file. Ort EP or native SDK tool chain</dd>
+</dl>
+
+#### Inputs (1 - &#8734;)
+
+<dl>
+<dt><tt>inputs</tt> (variadic) : T</dt>
+<dd>List of tensors for inputs</dd>
+</dl>
+
+#### Outputs (1 - &#8734;)
+
+<dl>
+<dt><tt>outputs</tt> (variadic) : T</dt>
+<dd>One or more outputs, list of tensors for outputs</dd>
+</dl>
+
+#### Type Constraints
+
+<dl>
+<dt><tt>T</tt> : tensor(int8), tensor(int16), tensor(int32), tensor(int64), tensor(uint8), tensor(uint16), tensor(uint32), tensor(uint64), tensor(float16), tensor(float), tensor(double)</dt>
+<dd>Constrain input and output types.</dd>
+</dl>
+
+
 ### <a name="com.microsoft.EmbedLayerNormalization"></a><a name="com.microsoft.embedlayernormalization">**com.microsoft.EmbedLayerNormalization**</a>
 
   EmbedLayerNormalization is the fusion of embedding layer in BERT model, with optional mask processing.
@@ -2258,7 +2308,7 @@ This version of the operator has been available since version 1 of the 'com.micr
 <dt><tt>past_value</tt> (optional) : T</dt>
 <dd>past state value with support for format BSNH or BNSH. When past_value uses same tensor as present_value(k-v cache), it is of length max_sequence_length... otherwise of length past_sequence_length.</dd>
 <dt><tt>past_sequence_length</tt> (optional) : M</dt>
-<dd>When buffered past_key and past_value is used (present_key uses same tensor as past_key), requiredto specify past_sequence_length (could be 0). Otherwise, past_sequence_length infered from past_key.</dd>
+<dd>When buffered past_key and past_value is used (present_key uses same tensor as past_key), requiredto specify past_sequence_length (could be 0). Otherwise, past_sequence_length inferred from past_key.</dd>
 </dl>
 
 #### Outputs (1 - 3)
@@ -2277,7 +2327,7 @@ This version of the operator has been available since version 1 of the 'com.micr
 <dl>
 <dt><tt>T</tt> : tensor(float16)</dt>
 <dd>Constrain input and output to float tensors.</dd>
-<dt><tt>M</tt> : tensor(int32)</dt>
+<dt><tt>M</tt> : tensor(int32), tensor(int64)</dt>
 <dd>Constrain past sequence length to int tensor.</dd>
 </dl>
 

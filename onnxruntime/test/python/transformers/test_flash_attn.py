@@ -9,8 +9,13 @@
 # Licensed under the MIT License.  See License.txt in the project root for
 # license information.
 # -------------------------------------------------------------------------
+import os
 import math
 import random
+<<<<<<< HEAD
+=======
+import unittest
+>>>>>>> aciddelgado/gqa_memeff_v2
 
 import numpy
 import torch
@@ -795,6 +800,7 @@ def parity_check_mha(
         config.num_heads,
         " kvN:",
         config.kv_num_heads,
+<<<<<<< HEAD
         " h:",
         config.head_size,
         " Mean Error:",
@@ -1127,6 +1133,8 @@ def parity_check_gqa_past_no_buff(
         config.num_heads,
         " kv N:",
         config.kv_num_heads,
+=======
+>>>>>>> aciddelgado/gqa_memeff_v2
         " h:",
         config.head_size,
         " Mean Error:",
@@ -1141,7 +1149,516 @@ def parity_check_gqa_past_no_buff(
     )
 
 
+def parity_check_gqa_no_past(
+    config,
+    causal=False,
+    rtol=1e-3,
+    atol=1e-3,
+):
+    q = torch.randn(
+        config.batch_size,
+        config.sequence_length,
+        config.num_heads,
+        config.head_size,
+        device="cuda",
+        dtype=torch.float16,
+        requires_grad=False,
+    )
+    k = torch.randn(
+        config.batch_size,
+        config.kv_sequence_length,
+        config.kv_num_heads,
+        config.head_size,
+        device="cuda",
+        dtype=torch.float16,
+        requires_grad=False,
+    )
+    v = torch.randn(
+        config.batch_size,
+        config.kv_sequence_length,
+        config.kv_num_heads,
+        config.head_size,
+        device="cuda",
+        dtype=torch.float16,
+        requires_grad=False,
+    )
+    # Pytorch to compare
+    out_ref, _ = attention_ref(q, k, v, None, None, 0.0, None, causal=causal)
+    out_ref = out_ref.detach().cpu().numpy()
+    # Flash function
+    out = gqa_no_past_func(q, k, v, config, causal=causal)
+    out = torch.squeeze(out, 0)
+    out = torch.reshape(out, (config.batch_size, config.sequence_length, config.num_heads, config.head_size))
+    out = out.detach().cpu().numpy()
+    # print(numpy.count_nonzero(numpy.isnan(out)))
+
+    # print(out - out_ref)
+    # Compare results
+    print(
+        " causal:",
+        causal,
+        " B:",
+        config.batch_size,
+        " S:",
+        config.sequence_length,
+        " kv S:",
+        config.kv_sequence_length,
+        " N:",
+        config.num_heads,
+        " kv N:",
+        config.kv_num_heads,
+        " h:",
+        config.head_size,
+        " Mean Error:",
+        numpy.mean(numpy.abs(out - out_ref)),
+        numpy.allclose(
+            out,
+            out_ref,
+            rtol=rtol,
+            atol=atol,
+            equal_nan=True,
+        ),
+    )
+
+
+def parity_check_gqa_past(
+    config,
+    causal=False,
+    past_format=Formats.BSNH,
+    rtol=1e-3,
+    atol=1e-3,
+):
+    q = torch.randn(
+        config.batch_size,
+        config.sequence_length,
+        config.num_heads,
+        config.head_size,
+        device="cuda",
+        dtype=torch.float16,
+        requires_grad=False,
+    )
+    k = torch.randn(
+        config.batch_size,
+        config.kv_sequence_length if past_format == Formats.BSNH else config.kv_num_heads,
+        config.kv_num_heads if past_format == Formats.BSNH else config.kv_sequence_length,
+        config.head_size,
+        device="cuda",
+        dtype=torch.float16,
+        requires_grad=False,
+    )
+    v = torch.randn(
+        config.batch_size,
+        config.kv_sequence_length if past_format == Formats.BSNH else config.kv_num_heads,
+        config.kv_num_heads if past_format == Formats.BSNH else config.kv_sequence_length,
+        config.head_size,
+        device="cuda",
+        dtype=torch.float16,
+        requires_grad=False,
+    )
+    new_k = torch.randn(
+        config.batch_size,
+        config.sequence_length,
+        config.kv_num_heads,
+        config.head_size,
+        device="cuda",
+        dtype=torch.float16,
+        requires_grad=False,
+    )
+    new_v = torch.randn(
+        config.batch_size,
+        config.sequence_length,
+        config.kv_num_heads,
+        config.head_size,
+        device="cuda",
+        dtype=torch.float16,
+        requires_grad=False,
+    )
+
+    # Pytorch to compare
+    k_cache_ref = k.clone()
+    v_cache_ref = v.clone()
+    if past_format == Formats.BNSH:
+        k_cache_ref = k_cache_ref.transpose(1, 2)
+        v_cache_ref = v_cache_ref.transpose(1, 2)
+    cache_seqlens = torch.tensor([config.past_sequence_length], device="cuda").repeat(config.batch_size)
+    arange = rearrange(torch.arange(config.kv_sequence_length, device="cuda"), "s -> 1 s")
+    cache_seqlens_expanded = rearrange(cache_seqlens, "b -> b 1")
+    update_mask = torch.logical_and(
+        cache_seqlens_expanded <= arange, arange < cache_seqlens_expanded + config.sequence_length
+    )
+    k_cache_ref[update_mask] = rearrange(new_k, "b s ... -> (b s) ...")
+    v_cache_ref[update_mask] = rearrange(new_v, "b s ... -> (b s) ...")
+    k_cache_rep = repeat(k_cache_ref, "b s h d -> b s (h g) d", g=config.num_heads // config.kv_num_heads)
+    v_cache_rep = repeat(v_cache_ref, "b s h d -> b s (h g) d", g=config.num_heads // config.kv_num_heads)
+    key_padding_mask = arange < cache_seqlens_expanded + config.sequence_length
+    out_ref, _ = attention_ref(q, k_cache_rep, v_cache_rep, None, key_padding_mask, 0.0, None, causal=causal)
+    out_ref = out_ref.detach().cpu().numpy()
+    if past_format == Formats.BNSH:
+        k_cache_ref = k_cache_ref.transpose(1, 2)
+        v_cache_ref = v_cache_ref.transpose(1, 2)
+
+    # Flash function
+    out, present_k, present_v = gqa_past_func(q, k, v, config, new_k, new_v, past_format, causal, True)
+    out = torch.squeeze(out, 0)
+    out = torch.reshape(out, (config.batch_size, config.sequence_length, config.num_heads, config.head_size))
+    out = out.detach().cpu().numpy()
+
+    # if past_format == Formats.BSNH:
+    #     print("huh")
+    #     print(
+    #         present_k[:, config.past_sequence_length, :, :]
+    #         - k_cache_ref.detach().cpu().numpy()[:, config.past_sequence_length, :, :]
+    #     )
+    # else:
+    #     print(
+    #         present_k[:, :, config.past_sequence_length, :]
+    #         - k_cache_ref.detach().cpu().numpy()[:, :, config.past_sequence_length, :]
+    #     )
+
+    # Make sure past-present buffer updating correctly
+    assert numpy.allclose(present_k, k_cache_ref.detach().cpu().numpy(), rtol=rtol, atol=atol, equal_nan=True)
+    assert numpy.allclose(present_v, v_cache_ref.detach().cpu().numpy(), rtol=rtol, atol=atol, equal_nan=True)
+
+    # print(out - out_ref)
+
+    # Compare results
+    print(
+        "KV-buffer",
+        "past kv format:",
+        "BSNH" if past_format == Formats.BSNH else "BNSH",
+        " causal:",
+        causal,
+        " B:",
+        config.batch_size,
+        " S:",
+        config.sequence_length,
+        " kv S:",
+        config.kv_sequence_length,
+        " N:",
+        config.num_heads,
+        " kv N:",
+        config.kv_num_heads,
+        " h:",
+        config.head_size,
+        " Mean Error:",
+        numpy.mean(numpy.abs(out - out_ref)),
+        numpy.allclose(
+            out,
+            out_ref,
+            rtol=rtol,
+            atol=atol,
+            equal_nan=True,
+        ),
+    )
+
+
+def parity_check_gqa_past_no_buff(
+    config,
+    causal=False,
+    past_format=Formats.BSNH,
+    rtol=1e-3,
+    atol=1e-3,
+):
+    q = torch.randn(
+        config.batch_size,
+        config.sequence_length,
+        config.num_heads,
+        config.head_size,
+        device="cuda",
+        dtype=torch.float16,
+        requires_grad=False,
+    )
+    k = torch.randn(
+        config.batch_size,
+        config.past_sequence_length if past_format == Formats.BSNH else config.kv_num_heads,
+        config.kv_num_heads if past_format == Formats.BSNH else config.past_sequence_length,
+        config.head_size,
+        device="cuda",
+        dtype=torch.float16,
+        requires_grad=False,
+    )
+    v = torch.randn(
+        config.batch_size,
+        config.past_sequence_length if past_format == Formats.BSNH else config.kv_num_heads,
+        config.kv_num_heads if past_format == Formats.BSNH else config.past_sequence_length,
+        config.head_size,
+        device="cuda",
+        dtype=torch.float16,
+        requires_grad=False,
+    )
+    new_k = torch.randn(
+        config.batch_size,
+        config.sequence_length,
+        config.kv_num_heads,
+        config.head_size,
+        device="cuda",
+        dtype=torch.float16,
+        requires_grad=False,
+    )
+    new_v = torch.randn(
+        config.batch_size,
+        config.sequence_length,
+        config.kv_num_heads,
+        config.head_size,
+        device="cuda",
+        dtype=torch.float16,
+        requires_grad=False,
+    )
+
+    # Pytorch to compare
+    k_cache_ref = k.clone()
+    v_cache_ref = v.clone()
+    if past_format == Formats.BNSH:
+        k_cache_ref = k_cache_ref.transpose(1, 2)
+        v_cache_ref = v_cache_ref.transpose(1, 2)
+    k_cache_ref = torch.cat((k_cache_ref, new_k), 1)
+    v_cache_ref = torch.cat((v_cache_ref, new_v), 1)
+    k_cache_rep = repeat(k_cache_ref, "b s h d -> b s (h g) d", g=config.num_heads // config.kv_num_heads)
+    v_cache_rep = repeat(v_cache_ref, "b s h d -> b s (h g) d", g=config.num_heads // config.kv_num_heads)
+    key_padding_mask = None
+    out_ref, _ = attention_ref(q, k_cache_rep, v_cache_rep, None, key_padding_mask, 0.0, None, causal=causal)
+    out_ref = out_ref.detach().cpu().numpy()
+    if past_format == Formats.BNSH:
+        k_cache_ref = k_cache_ref.transpose(1, 2)
+        v_cache_ref = v_cache_ref.transpose(1, 2)
+
+    # Flash function
+    out, present_k, present_v = gqa_past_func(q, k, v, config, new_k, new_v, past_format, causal, False)
+    out = torch.squeeze(out, 0)
+    out = torch.reshape(out, (config.batch_size, config.sequence_length, config.num_heads, config.head_size))
+    out = out.detach().cpu().numpy()
+
+    # print(present_k[0, 0, config.past_sequence_length, :10])
+    # print(k_cache_ref[0, 0, config.past_sequence_length, :10])
+    # print(k_cache_ref.shape)
+
+    # print(present_k - k_cache_ref.detach().cpu().numpy())
+
+    # Make sure past-present buffer updating correctly
+    if past_format == Formats.BSNH:
+        assert numpy.allclose(
+            present_k,
+            k_cache_ref.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+            equal_nan=True,
+        )
+        assert numpy.allclose(
+            present_v,
+            v_cache_ref.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+            equal_nan=True,
+        )
+    else:
+        assert numpy.allclose(
+            present_k,
+            k_cache_ref.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+            equal_nan=True,
+        )
+        assert numpy.allclose(
+            present_v,
+            v_cache_ref.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+            equal_nan=True,
+        )
+
+    # Compare results
+    print(
+        "Unbuffered",
+        "past kv format:",
+        "BSNH" if past_format == Formats.BSNH else "BNSH",
+        " causal:",
+        causal,
+        " B:",
+        config.batch_size,
+        " S:",
+        config.sequence_length,
+        " kv S:",
+        config.kv_sequence_length,
+        " N:",
+        config.num_heads,
+        " kv N:",
+        config.kv_num_heads,
+        " h:",
+        config.head_size,
+        " Mean Error:",
+        numpy.mean(numpy.abs(out - out_ref)),
+        numpy.allclose(
+            out,
+            out_ref,
+            rtol=rtol,
+            atol=atol,
+            equal_nan=True,
+        ),
+    )
+
+
+class TestMHA(unittest.TestCase):
+    def test_packed_mha(self):
+        major, _ = torch.cuda.get_device_capability()
+        if major < 8:
+            return
+        print("-------- TEST PACKED MHA ---------")
+        for b in [5]:
+            for s in [97, 128, 200, 256, 257, 384, 512, 768, 1024, 1025, 2048]:
+                for n in [6]:
+                    for h in [32, 40, 59, 64, 80, 96, 111, 128, 160, 192, 224, 256]:
+                        config = Config(b, s, s, 0, n, n, h)
+                        parity_check_mha(config, True)
+
+    def test_mha(self):
+        major, _ = torch.cuda.get_device_capability()
+        if major < 8:
+            return
+        print("-------- TEST MHA ---------")
+        for b in [5]:
+            for s, s2 in [
+                (113, 203),
+                (128, 217),
+                (113, 211),
+                (108, 256),
+                (256, 512),
+                (512, 256),
+                (1024, 1024),
+                (1023, 1024),
+                (1024, 1023),
+                (2048, 2048),
+            ]:
+                for n in [6]:
+                    for h in [32, 40, 59, 64, 80, 96, 111, 128, 160, 192, 224, 256]:
+                        config = Config(b, s, s2, 0, n, n, h)
+                        parity_check_mha(config, False)
+
+
+class TestGQA(unittest.TestCase):
+    def test_gqa_no_past(self):
+        major, minor = torch.cuda.get_device_capability()
+        if major < 5 or (major == 5 and minor < 3):
+            return
+        torch.manual_seed(69)
+        print("-------- TEST GQA ---------")
+        os.environ["ORT_DISABLE_FLASH_ATTENTION"] = "0"
+        for b in [1, 5]:
+            for s, s2 in [
+                (113, 203),
+                (128, 217),
+                (113, 211),
+                (108, 256),
+                (256, 512),
+                (512, 256),
+                (1024, 1024),
+                (1023, 1024),
+                (1024, 1023),
+                (2048, 2048),
+            ]:
+                for n, n2 in [(6, 6), (6, 3), (9, 9), (9, 3)]:
+                    for h in [32, 40, 64, 80, 96, 128, 160, 192, 224, 256]:
+                        for causal in [True, False]:
+                            config = Config(b, s, s2, 0, n, n2, h)
+                            parity_check_gqa_no_past(config, causal=causal)
+        if major < 8:
+            return
+        os.environ["ORT_DISABLE_FLASH_ATTENTION"] = "1"
+        for b in [1, 5]:
+            for s, s2 in [
+                (113, 203),
+                (128, 217),
+                (113, 211),
+                (108, 256),
+                (256, 512),
+                (1024, 1024),
+                (1023, 1024),
+                (2048, 2048),
+            ]:
+                for n, n2 in [(6, 6), (6, 3), (9, 9), (9, 3)]:
+                    for h in [32, 40, 64, 80, 96, 128, 160, 192, 224, 256]:
+                        for causal in [True, False]:
+                            config = Config(b, s, s2, 0, n, n2, h)
+                            parity_check_gqa_no_past(config, causal=causal)
+
+    def test_gqa_past(self):
+        major, _ = torch.cuda.get_device_capability()
+        if major < 8:
+            return
+        print("-------- TEST GQA PAST ---------")
+        random.seed(69)
+        for b in [2]:
+            for s, s2 in [
+                (1, 128),
+                (1, 339),
+                (3, 1024),
+                (64, 800),
+                (64, 256),
+                (3, 799),
+                (64, 2048),
+                (16, 20000),
+                (1, 128 * 512),
+                (16, 128 * 512),
+                (128, 128),
+            ]:
+                for n, n2 in [(6, 6), (6, 3), (9, 9), (9, 3)]:
+                    for h in [32, 40, 64, 80, 96, 128, 160, 192, 224, 256]:
+                        for causal in [True]:
+                            for past_kv_format in [Formats.BNSH, Formats.BSNH]:
+                                sp = random.randint(1, s2 - s) if s2 - s > 0 else 0
+                                config = Config(b, s, s2, sp, n, n2, h)
+                                parity_check_gqa_past(
+                                    config,
+                                    causal=causal,
+                                    past_format=past_kv_format,
+                                    rtol=1e-3,
+                                    atol=1e-3,
+                                )
+                                parity_check_gqa_past_no_buff(
+                                    config,
+                                    causal=causal,
+                                    past_format=past_kv_format,
+                                    rtol=1e-3,
+                                    atol=1e-3,
+                                )
+        if major < 8:
+            return
+        os.environ["ORT_DISABLE_FLASH_ATTENTION"] = "1"
+        for b in [2]:
+            for s, s2 in [
+                (1, 128),
+                (1, 339),
+                (3, 1024),
+                (64, 800),
+                (64, 256),
+                (3, 799),
+                (64, 2048),
+                (16, 20000),
+                (128, 128),
+            ]:
+                for n, n2 in [(6, 6), (6, 3), (9, 9), (9, 3)]:
+                    for h in [32, 40, 64, 80, 96, 128, 160, 192, 224, 256]:
+                        for causal in [True]:
+                            for past_kv_format in [Formats.BNSH, Formats.BSNH]:
+                                sp = random.randint(1, s2 - s) if s2 - s > 0 else 0
+                                config = Config(b, s, s2, sp, n, n2, h)
+                                parity_check_gqa_past(
+                                    config,
+                                    causal=causal,
+                                    past_format=past_kv_format,
+                                    rtol=1e-3,
+                                    atol=1e-3,
+                                )
+                                parity_check_gqa_past_no_buff(
+                                    config,
+                                    causal=causal,
+                                    past_format=past_kv_format,
+                                    rtol=1e-3,
+                                    atol=1e-3,
+                                )
+
+
 if __name__ == "__main__":
+<<<<<<< HEAD
     print("-------- TEST PACKED MHA ---------")
     for b in [5]:
         for s in [97, 128, 200, 256, 257, 384, 512, 768, 1024, 1025, 2048]:
@@ -1222,3 +1739,6 @@ if __name__ == "__main__":
                                 rtol=1e-3,
                                 atol=1e-3,
                             )
+=======
+    unittest.main()
+>>>>>>> aciddelgado/gqa_memeff_v2

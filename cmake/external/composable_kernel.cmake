@@ -1,5 +1,5 @@
 set(composable_kernel_URL https://github.com/cloudhan/composable_kernel.git)
-set(composable_kernel_TAG 4c7a5a388af5a9d76a1af65c2debdd53826ae864)
+set(composable_kernel_TAG vectorized-element-op)
 
 set(PATCH ${PROJECT_SOURCE_DIR}/patches/composable_kernel/Fix_Clang_Build.patch)
 

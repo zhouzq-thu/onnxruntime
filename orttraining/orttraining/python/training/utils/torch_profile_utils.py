@@ -5,12 +5,14 @@
 
 import torch
 
+
 def torch_nvtx_range_push(msg):
-    if hasattr(torch.cuda.nvtx, 'range_push'):
+    if hasattr(torch.cuda.nvtx, "range_push"):
         return torch.cuda.nvtx.range_push(msg)
 
+
 def torch_nvtx_range_pop():
-    if hasattr(torch.cuda.nvtx, 'range_pop'):
+    if hasattr(torch.cuda.nvtx, "range_pop"):
         return torch.cuda.nvtx.range_pop()
 
 

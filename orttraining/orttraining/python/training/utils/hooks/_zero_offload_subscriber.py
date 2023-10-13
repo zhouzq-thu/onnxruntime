@@ -17,9 +17,11 @@ import torch
 from onnxruntime.training.utils import (
     ORTModelInputOutputType,
     extract_data_and_schema,
+    nvtx_function_decorator,
     pytorch_dtype_to_onnx,
+    torch_nvtx_range_pop,
+    torch_nvtx_range_push,
     unflatten_data_using_schema,
-    torch_nvtx_range_pop, torch_nvtx_range_push, nvtx_function_decorator
 )
 
 from ._subscriber_base import RuntimeStates, SubscriberBase
@@ -173,6 +175,7 @@ except ImportError as e:
     def configure_ort_compatible_zero_stage3(debug=False, stats_output_dir=None, stats_overwrite=False):
         raise RuntimeError("DeepSpeed is not installed, cannot configure ORT compatible ZeRO stage3.")
 
+
 @nvtx_function_decorator
 def _get_params_for_current_module(module: torch.nn.Module) -> List[torch.nn.parameter.Parameter]:
     """Retrieve the parameters for this module.
@@ -186,6 +189,7 @@ def _get_params_for_current_module(module: torch.nn.Module) -> List[torch.nn.par
     partitioned_params = [param for param in iter_params(module)]
 
     return partitioned_params
+
 
 @nvtx_function_decorator
 def _get_all_zero_stage3_params(module: torch.nn.Module) -> Dict[str, torch.nn.parameter.Parameter]:

@@ -13,6 +13,7 @@ import torch
 from torch.utils.dlpack import from_dlpack, to_dlpack
 
 from onnxruntime.training.ortmodule.torch_cpp_extensions import torch_interop_utils
+from onnxruntime.training.utils import nvtx_function_decorator, torch_nvtx_range_pop, torch_nvtx_range_push
 
 from ._fallback import ORTModuleFallbackException, ORTModuleIOError, _FallbackManager, wrap_exception  # noqa: F401
 from ._utils import get_rank
@@ -73,6 +74,7 @@ class CustomFuncOpKernelInfo:
 _GlobalOpKernelInfoMap: Dict[str, CustomFuncOpKernelInfo] = {}
 
 
+@nvtx_function_decorator
 def _process_inplace_outputs(
     kernel_info: CustomFuncOpKernelInfo,
     func_name: str,
@@ -257,6 +259,7 @@ def _process_inplace_outputs(
                 all_outputs_of_kernel_run[output_index] = raw_input_tensor
 
 
+@nvtx_function_decorator
 def _get_context(forward_tensor_outputs: List[torch.Tensor]) -> Tuple[any, Optional[torch.Tensor]]:
     """Search for context among all outputs.
 
@@ -315,6 +318,7 @@ def _get_context(forward_tensor_outputs: List[torch.Tensor]) -> Tuple[any, Optio
     return (ctx, first_tensor_output)
 
 
+@nvtx_function_decorator
 def _finalize_training_mode_forward(
     kernel_invoke_id: str,
     func_name: str,
@@ -419,6 +423,7 @@ def _finalize_training_mode_forward(
     return ctx
 
 
+@nvtx_function_decorator
 def call_python_forward_function(
     forward_function: Callable,
     requires_grad_flags: List[bool],
@@ -524,7 +529,9 @@ def call_python_forward_function(
             # TODO(pengwa): looks like we are assuming all outputs will be either Tensor or None.
             # We should revisit if it is possible to support other types of output, for example int, or, etc.
             # But that might also require some work in backend.
+            torch_nvtx_range_push(f"{func_name.fw}")
             result = forward_function(*wrapped_args)
+            torch_nvtx_range_pop()
 
             results = []
             if isinstance(result, torch.Tensor):
@@ -569,6 +576,7 @@ def call_python_forward_function(
         raise wrap_exception(ORTModuleFallbackException, e)  # noqa: B904
 
 
+@nvtx_function_decorator
 def call_python_backward_function(
     backward_function: Callable,
     requires_grad_flags: List[bool],

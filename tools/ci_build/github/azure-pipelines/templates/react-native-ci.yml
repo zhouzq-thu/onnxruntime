@@ -60,6 +60,15 @@ stages:
       ORT_CACHE_DIR: '$(Pipeline.Workspace)/ccache_ort'
     timeoutInMinutes: 180
     steps:
+    - template: use-android-emulator.yml
+      parameters:
+        create: true
+        start: true
+
+    - template: use-android-emulator.yml
+      parameters:
+        stop: true
+
     - task: mspremier.PostBuildCleanup.PostBuildCleanup-task.PostBuildCleanup@3
       displayName: Clean Agent Directories
       condition: always()

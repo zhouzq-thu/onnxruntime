@@ -8,6 +8,9 @@ import warnings
 from collections import abc
 from typing import List, Mapping, Optional, Sequence, Tuple, Union
 
+from onnxruntime.training.utils.torch_profile_utils import nvtx_function_decorator
+
+
 import torch
 
 
@@ -121,7 +124,7 @@ def _warn_of_constant_inputs(data):
         " Please consider moving constant arguments to the model constructor."
     )
 
-
+@nvtx_function_decorator
 def extract_data_and_schema(
     data: ORTModelInputOutputType, constant_as_tensor=False, device: Optional[torch.device] = None
 ) -> Tuple[List[torch.Tensor], ORTModelInputOutputSchemaType]:
@@ -229,7 +232,7 @@ def extract_data_and_schema(
     schemas = _flatten_from_data(data)
     return flatten_tensor_data, schemas
 
-
+@nvtx_function_decorator
 def unflatten_data_using_schema(
     data: List[torch.Tensor], schema: ORTModelInputOutputSchemaType
 ) -> ORTModelInputOutputType:

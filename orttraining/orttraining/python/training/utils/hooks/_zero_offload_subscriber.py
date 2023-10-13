@@ -19,6 +19,7 @@ from onnxruntime.training.utils import (
     extract_data_and_schema,
     pytorch_dtype_to_onnx,
     unflatten_data_using_schema,
+    torch_nvtx_range_pop, torch_nvtx_range_push, nvtx_function_decorator
 )
 
 from ._subscriber_base import RuntimeStates, SubscriberBase
@@ -172,7 +173,7 @@ except ImportError as e:
     def configure_ort_compatible_zero_stage3(debug=False, stats_output_dir=None, stats_overwrite=False):
         raise RuntimeError("DeepSpeed is not installed, cannot configure ORT compatible ZeRO stage3.")
 
-
+@nvtx_function_decorator
 def _get_params_for_current_module(module: torch.nn.Module) -> List[torch.nn.parameter.Parameter]:
     """Retrieve the parameters for this module.
 
@@ -186,7 +187,7 @@ def _get_params_for_current_module(module: torch.nn.Module) -> List[torch.nn.par
 
     return partitioned_params
 
-
+@nvtx_function_decorator
 def _get_all_zero_stage3_params(module: torch.nn.Module) -> Dict[str, torch.nn.parameter.Parameter]:
     """Retrieve all the parameters that are offloaded."""
     from deepspeed.runtime.zero.partition_parameters import ZeroParamStatus
@@ -227,6 +228,8 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
             tensor_list: the list of tensors, the first args_tensor_count tensors are args, the next
                 kwargs_tensor_count tensors are kwargs, the rest are the parameters for offload.
         """
+        torch_nvtx_range_push("ORTZeROOffloadPreForwardFunction::forward")
+
         args_tensors = tensor_list[:args_tensor_count]
         kwargs_tensors = tensor_list[args_tensor_count : args_tensor_count + kwargs_tensor_count]
 
@@ -272,10 +275,14 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
 
         # PyTorch exporter does not support an empty list of tensors, so we have this check.
         assert len(rets) != 0
+
+        torch_nvtx_range_pop()
         return rets
 
     @staticmethod
     def backward(ctx, *grads):
+        torch_nvtx_range_push("ORTZeROOffloadPreForwardFunction::backward")
+
         updated_grads = grads
 
         input_count = len(updated_grads) - len(ctx.partitioned_params)
@@ -302,6 +309,7 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
 
         zero_grads = updated_grads[:input_count] + tuple(passed_in_param_grad)
 
+        torch_nvtx_range_pop()
         return (None, None, None, None, None, None, *zero_grads)
 
     @staticmethod
@@ -381,6 +389,8 @@ class ORTZeROOffloadPostForwardFunction(torch.autograd.Function):
             output_tensors: the list of tensors.
 
         """
+        torch_nvtx_range_push("ORTZeROOffloadPostForwardFunction::forward")
+
         outputs = unflatten_data_using_schema(output_tensors, output_schema)
 
         # STAGE3WARN#3: _post_forward_module_hook's second argument `input is not used, so we just pass a None here.
@@ -394,15 +404,21 @@ class ORTZeROOffloadPostForwardFunction(torch.autograd.Function):
         ctx.module = module
         ctx.pre_backward_function = pre_backward_function
         rets = [o.detach().requires_grad_(o.requires_grad) for o in updated_output_tensors]
+
+        torch_nvtx_range_pop()
         return tuple(rets)
 
     @staticmethod
     def backward(ctx, *grads):
+        torch_nvtx_range_push("ORTZeROOffloadPostForwardFunction::backward")
+
         updated_args = grads
         if ctx.pre_backward_function is not None:
             ret = ctx.pre_backward_function(ctx.module, grads)
             if ret is not None:
                 updated_args = ret
+
+        torch_nvtx_range_pop()
         return (None, None, None, None, *updated_args)
 
     @staticmethod
@@ -467,6 +483,7 @@ class ZeROOffloadSubscriber(SubscriberBase):
         self._functions = _ZeROOffloadFunctions(one_time_init, self._offloader)
         self._enable_debug_info = enable_debug_info
 
+    @nvtx_function_decorator
     def pre_forward_module_apply_impl(
         self,
         run_rtx: RuntimeStates,
@@ -545,6 +562,7 @@ class ZeROOffloadSubscriber(SubscriberBase):
 
         return updated_args, updated_kwargs
 
+    @nvtx_function_decorator
     def post_forward_module_apply_impl(
         self,
         run_rtx: RuntimeStates,
@@ -598,6 +616,7 @@ class ZeROOffloadSubscriber(SubscriberBase):
 
         return args, updated_outputs
 
+    @nvtx_function_decorator
     def post_forward_outmost_module_apply_impl(
         self,
         run_rtx: RuntimeStates,
@@ -620,6 +639,7 @@ class ZeROOffloadSubscriber(SubscriberBase):
         updated_outputs = unflatten_data_using_schema(updated_outputs_tensors, outputs_schema)
         return args, updated_outputs
 
+    @nvtx_function_decorator
     def _check_all_tensor(self, tensor_list: Tuple[torch.Tensor], module: torch.nn.Module, name: str):
         if not self._enable_debug_info:
             return

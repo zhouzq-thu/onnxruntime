@@ -14,16 +14,15 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import onnx
 import torch
 
-from onnxruntime.training.utils import (
+from onnxruntime.training.utils import (  # unflatten_data_using_schema_and_reset_func,
     ORTModelInputOutputType,
     extract_data_and_schema,
+    extract_data_with_access_func,
     nvtx_function_decorator,
     pytorch_dtype_to_onnx,
     torch_nvtx_range_pop,
     torch_nvtx_range_push,
     unflatten_data_using_schema,
-    unflatten_data_using_schema_and_reset_func,
-    extract_data_with_access_func,
 )
 
 from ._subscriber_base import RuntimeStates, SubscriberBase
@@ -207,6 +206,7 @@ def _get_all_zero_stage3_params(module: torch.nn.Module) -> Dict[str, torch.nn.p
 
 
 _ModuleToParametersRefs: Dict[torch.nn.Module, List[torch.nn.parameter.Parameter]] = OrderedDict()
+
 
 class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
     """This function is a common bridge to call original PyTorch's pre_forward_function"""
@@ -601,7 +601,9 @@ class ZeROOffloadSubscriber(SubscriberBase):
 
         """
 
-        outputs_tensors, outputs_schema, outputs_data_access_func, outputs_data_set_func = extract_data_and_schema(outputs)
+        outputs_tensors, outputs_schema, outputs_data_access_func, outputs_data_set_func = extract_data_and_schema(
+            outputs
+        )
 
         _post_forward_module_hook = self._functions.get("_post_forward_module_hook")
 
@@ -623,7 +625,13 @@ class ZeROOffloadSubscriber(SubscriberBase):
         self._check_all_tensor(outputs_tensors, module, "post_forward_module_apply_impl input check")
 
         updated_outputs_tensors = ORTZeROOffloadPostForwardFunction.apply(
-            module, _wrap_post_forward_module_hook, None, outputs_schema, outputs_data_access_func, outputs_data_set_func, *outputs_tensors
+            module,
+            _wrap_post_forward_module_hook,
+            None,
+            outputs_schema,
+            outputs_data_access_func,
+            outputs_data_set_func,
+            *outputs_tensors,
         )
 
         self._check_all_tensor(updated_outputs_tensors, module, "post_forward_module_apply_impl output check")
@@ -649,13 +657,21 @@ class ZeROOffloadSubscriber(SubscriberBase):
         args: ORTModelInputOutputType,
         outputs: ORTModelInputOutputType,
     ) -> Tuple[ORTModelInputOutputType, ORTModelInputOutputType]:
-        outputs_tensors, outputs_schema, outputs_data_access_func, outputs_data_set_func = extract_data_and_schema(outputs)
+        outputs_tensors, outputs_schema, outputs_data_access_func, outputs_data_set_func = extract_data_and_schema(
+            outputs
+        )
 
         _end_of_forward_hook = self._functions.get("_end_of_forward_hook")
         self._check_all_tensor(outputs_tensors, module, "post_forward_outmost_module_apply_impl input check")
 
         updated_outputs_tensors = ORTZeROOffloadPostForwardFunction.apply(
-            module, _end_of_forward_hook, None, outputs_schema, outputs_data_access_func, outputs_data_set_func, *outputs_tensors
+            module,
+            _end_of_forward_hook,
+            None,
+            outputs_schema,
+            outputs_data_access_func,
+            outputs_data_set_func,
+            *outputs_tensors,
         )
 
         self._check_all_tensor(updated_outputs_tensors, module, "post_forward_outmost_module_apply_impl output check")

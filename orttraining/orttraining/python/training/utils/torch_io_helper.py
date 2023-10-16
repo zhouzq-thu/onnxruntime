@@ -7,7 +7,7 @@ import copy
 import types
 import warnings
 from collections import abc
-from typing import List, Mapping, Optional, Sequence, Tuple, Union, Callable
+from typing import Callable, List, Mapping, Optional, Sequence, Tuple, Union
 
 import torch
 
@@ -126,7 +126,7 @@ def _warn_of_constant_inputs(data):
 
 
 def create_function_from_string(func_str: str):
-    code_obj = compile(func_str, '<string>', 'exec')
+    code_obj = compile(func_str, "<string>", "exec")
     new_func_type = types.FunctionType(code_obj.co_consts[0], globals())
     return new_func_type
 
@@ -190,7 +190,9 @@ def extract_data_and_schema(
     tensor_access_func_strs = []
     tensor_set_func_strs = []
 
-    def _flatten_from_data(data: ORTModelInputOutputType, prefix_name: str, tensor_access_func_str: str, reset_func_str: str):
+    def _flatten_from_data(
+        data: ORTModelInputOutputType, prefix_name: str, tensor_access_func_str: str, reset_func_str: str
+    ):
         if data is None:
             return data
         elif isinstance(data, str):
@@ -201,8 +203,12 @@ def extract_data_and_schema(
             if constant_as_tensor:
                 tensor_idx[0] += 1
                 flatten_tensor_data.append(PrimitiveType.get_tensor(data, device))
-                tensor_access_func_strs.append(f"def _access_to_tensor_{tensor_idx[0]}(data):\n    return torch.tensor({tensor_access_func_str}, device='{str(device)}')\n")
-                tensor_set_func_strs.append(f"def _set_tensor_{tensor_idx[0]}(data_holder, value):\n    {reset_func_str} = value.item()\n")
+                tensor_access_func_strs.append(
+                    f"def _access_to_tensor_{tensor_idx[0]}(data):\n    return torch.tensor({tensor_access_func_str}, device='{device!s}')\n"
+                )
+                tensor_set_func_strs.append(
+                    f"def _set_tensor_{tensor_idx[0]}(data_holder, value):\n    {reset_func_str} = value.item()\n"
+                )
                 return _TensorStub(
                     tensor_idx[0], dtype=PrimitiveType.get_primitive_dtype(data), shape_dims=0, name=prefix_name
                 )
@@ -211,8 +217,12 @@ def extract_data_and_schema(
         elif isinstance(data, torch.Tensor):
             tensor_idx[0] += 1
             flatten_tensor_data.append(data)
-            tensor_access_func_strs.append(f"def _access_to_tensor_{tensor_idx[0]}(data):\n    return {tensor_access_func_str}\n")
-            tensor_set_func_strs.append(f"def _set_tensor_{tensor_idx[0]}(data_holder, value):\n    {reset_func_str} = value\n")
+            tensor_access_func_strs.append(
+                f"def _access_to_tensor_{tensor_idx[0]}(data):\n    return {tensor_access_func_str}\n"
+            )
+            tensor_set_func_strs.append(
+                f"def _set_tensor_{tensor_idx[0]}(data_holder, value):\n    {reset_func_str} = value\n"
+            )
             return _TensorStub(
                 tensor_idx[0],
                 dtype=str(data.dtype),
@@ -223,7 +233,14 @@ def extract_data_and_schema(
             sequence_type = type(data)
             stubbed_schema = []
             for i, val in enumerate(data):
-                stubbed_schema.append(_flatten_from_data(val, f"{prefix_name}_{i}" if prefix_name else f"{i}", f"{tensor_access_func_str}[{i}]", f"{reset_func_str}[{i}]"))
+                stubbed_schema.append(
+                    _flatten_from_data(
+                        val,
+                        f"{prefix_name}_{i}" if prefix_name else f"{i}",
+                        f"{tensor_access_func_str}[{i}]",
+                        f"{reset_func_str}[{i}]",
+                    )
+                )
 
             try:
                 # namedtuple can be created by passing the list sequence to method _make
@@ -236,7 +253,12 @@ def extract_data_and_schema(
             dict_type = type(data)
             stubbed_schema = {}
             for key, val in sorted(data.items()):
-                stubbed_schema[key] = _flatten_from_data(val, f"{prefix_name}_{key}" if prefix_name else f"{key}", f"{tensor_access_func_str}['{key}']", f"{reset_func_str}['{key}']")
+                stubbed_schema[key] = _flatten_from_data(
+                    val,
+                    f"{prefix_name}_{key}" if prefix_name else f"{key}",
+                    f"{tensor_access_func_str}['{key}']",
+                    f"{reset_func_str}['{key}']",
+                )
             stubbed_schema = dict_type(**stubbed_schema)
             return stubbed_schema
         else:
@@ -248,13 +270,10 @@ def extract_data_and_schema(
 
     assert len(flatten_tensor_data) == len(tensor_access_func_strs)
 
-    print(tensor_access_func_strs)
-    print(tensor_set_func_strs)
     data_retrieve_functions = [create_function_from_string(func_str) for func_str in tensor_access_func_strs]
     data_set_functions = [create_function_from_string(func_str) for func_str in tensor_set_func_strs]
 
     return flatten_tensor_data, schemas, data_retrieve_functions, data_set_functions
-
 
 
 @nvtx_function_decorator
@@ -343,7 +362,7 @@ def unflatten_data_using_schema(
 
 @nvtx_function_decorator
 def extract_data_with_access_func(
-    data: ORTModelInputOutputType,  data_access_functions: List[Callable]
+    data: ORTModelInputOutputType, data_access_functions: List[Callable]
 ) -> Tuple[List[torch.Tensor]]:
     flatten_data = []
     for func in data_access_functions:
@@ -368,7 +387,7 @@ def unflatten_data_using_schema_and_reset_func(
 
     """
     assert len(data) == len(data_set_functions)
-    new_data_holder = [copy.deepcopy(schema)] # Use an list in case schema itself is not modifiable inside func later.
+    new_data_holder = [copy.deepcopy(schema)]  # Use an list in case schema itself is not modifiable inside func later.
     for i, func in enumerate(data_set_functions):
         func(new_data_holder, data[i])
 

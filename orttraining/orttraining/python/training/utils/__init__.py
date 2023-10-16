@@ -8,8 +8,8 @@ from onnxruntime.training.utils.torch_io_helper import (
     ORTModelInputOutputType,
     PrimitiveType,
     extract_data_and_schema,
-    unflatten_data_using_schema,
     extract_data_with_access_func,
+    unflatten_data_using_schema,
     unflatten_data_using_schema_and_reset_func,
 )
 from onnxruntime.training.utils.torch_profile_utils import (

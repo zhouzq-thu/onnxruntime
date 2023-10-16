@@ -3,11 +3,15 @@
 
 from collections import abc
 
-import copy
 import pytest
 import torch
 
-from onnxruntime.training.utils import extract_data_and_schema, unflatten_data_using_schema, PrimitiveType, extract_data_with_access_func, unflatten_data_using_schema_and_reset_func
+from onnxruntime.training.utils import (
+    extract_data_and_schema,
+    extract_data_with_access_func,
+    unflatten_data_using_schema,
+    unflatten_data_using_schema_and_reset_func,
+)
 from onnxruntime.training.utils.torch_io_helper import _TensorStub
 
 
@@ -297,9 +301,10 @@ def test_data_flatten_and_unflatten(input_output_map, flag: int):
         out2 = extract_data_with_access_func(raw_data, out_retrieve_func)
         assert all([isinstance(o, torch.Tensor) and torch.allclose(o, d) for o, d in zip(out, out2)])
 
-
         flatten_data_constant_as_tensor = input_output_map[3]
-        out, schema, out_retrieve_func, _ = extract_data_and_schema(raw_data, constant_as_tensor=True, device=torch.device("cpu"))
+        out, schema, out_retrieve_func, _ = extract_data_and_schema(
+            raw_data, constant_as_tensor=True, device=torch.device("cpu")
+        )
         out2 = extract_data_with_access_func(raw_data, out_retrieve_func)
         if isinstance(
             raw_data,
@@ -319,6 +324,8 @@ def test_data_flatten_and_unflatten(input_output_map, flag: int):
         _recursive_compare(recovered_data, raw_data)
 
         flatten_data_constant_as_tensor = input_output_map[3]
-        out, schema, _, schema_set_func = extract_data_and_schema(raw_data, constant_as_tensor=True, device=torch.device("cpu"))
+        out, schema, _, schema_set_func = extract_data_and_schema(
+            raw_data, constant_as_tensor=True, device=torch.device("cpu")
+        )
         recovered_data = unflatten_data_using_schema_and_reset_func(out, schema, schema_set_func)
         _recursive_compare(recovered_data, raw_data)

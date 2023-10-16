@@ -22,6 +22,8 @@ from onnxruntime.training.utils import (
     torch_nvtx_range_pop,
     torch_nvtx_range_push,
     unflatten_data_using_schema,
+    unflatten_data_using_schema_and_reset_func,
+    extract_data_with_access_func,
 )
 
 from ._subscriber_base import RuntimeStates, SubscriberBase
@@ -204,6 +206,8 @@ def _get_all_zero_stage3_params(module: torch.nn.Module) -> Dict[str, torch.nn.p
     return all_offloaed_params
 
 
+_ModuleToParametersRefs: Dict[torch.nn.Module, List[torch.nn.parameter.Parameter]] = OrderedDict()
+
 class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
     """This function is a common bridge to call original PyTorch's pre_forward_function"""
 
@@ -213,7 +217,11 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
         module,
         pre_forward_with_kwargs_function,
         args_schema,
+        args_data_access_func,
+        args_data_set_func,
         kwargs_schema,
+        kwargs_data_access_func,
+        kwargs_data_set_func,
         args_tensor_count,
         kwargs_tensor_count,
         *tensor_list,
@@ -248,15 +256,17 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
         ctx.dtypes = [p.dtype for p in passed_in_param_tensors]
         ctx.devices = [p.device for p in passed_in_param_tensors]
 
-        args = unflatten_data_using_schema(args_tensors, args_schema)
-        kwargs = unflatten_data_using_schema(kwargs_tensors, kwargs_schema)
+        # args = unflatten_data_using_schema(args_tensors, args_schema)
+        args = unflatten_data_using_schema_and_reset_func(args_tensors, args_schema, args_data_set_func)
+        # kwargs = unflatten_data_using_schema(kwargs_tensors, kwargs_schema)
+        kwargs = unflatten_data_using_schema_and_reset_func(kwargs_tensors, kwargs_schema, kwargs_data_set_func)
 
         # We will re-retrieve the parameter tensors other than use the one passed in input (of size 0 for
         # those partitioned params).
         # This is required for ORT run because in ORT graph, the tensor of size 0 will always be size 0
         # (this step is not necessary for PyTorch run, because PyTorch will re-use the same tensor
         # while .data got updated to full-sized data after pre_forward_with_kwargs_function is called).
-        partitioned_params = _get_params_for_current_module(module)
+        partitioned_params = _ModuleToParametersRefs.get(module, _get_params_for_current_module(module))
         ctx.partitioned_params = partitioned_params
 
         assert len(partitioned_params) == len(passed_in_param_tensors)
@@ -271,8 +281,10 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
 
         ctx.module = module
 
-        updated_args_tensors, _ = extract_data_and_schema(updated_args)
-        updated_kwargs_tensors, _ = extract_data_and_schema(updated_kwargs)
+        # updated_args_tensors, _, _, _ = extract_data_and_schema(updated_args)
+        updated_args_tensors = extract_data_with_access_func(updated_args, args_data_access_func)
+        # updated_kwargs_tensors, _, _, _ = extract_data_and_schema(updated_kwargs)
+        updated_kwargs_tensors = extract_data_with_access_func(updated_kwargs, kwargs_data_access_func)
 
         rets = tuple(updated_args_tensors + updated_kwargs_tensors)
         rets += tuple([p.detach().requires_grad_(p.requires_grad) for p in partitioned_params])
@@ -314,7 +326,7 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
         zero_grads = updated_grads[:input_count] + tuple(passed_in_param_grad)
 
         torch_nvtx_range_pop()
-        return (None, None, None, None, None, None, *zero_grads)
+        return (None, None, None, None, None, None, None, None, None, None, *zero_grads)
 
     @staticmethod
     def infer_shape(
@@ -354,7 +366,7 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
         module = ctypes.cast(input_pointer_scalars[0], ctypes.py_object).value
         partitioned_params = _get_params_for_current_module(module)
 
-        non_tensor_fw_input_count = 6
+        non_tensor_fw_input_count = 10
         fw_output_count = len(node.output) - 1  # exclude the first output appended in ONNX
         fw_alias_map = [-1] * fw_output_count
         bw_alias_map = [-1] * (non_tensor_fw_input_count + len(node.input))
@@ -380,6 +392,8 @@ class ORTZeROOffloadPostForwardFunction(torch.autograd.Function):
         post_forward_function,
         pre_backward_function,
         output_schema,
+        outputs_data_access_func,
+        outputs_data_set_func,
         *output_tensors,
     ):
         """
@@ -395,7 +409,8 @@ class ORTZeROOffloadPostForwardFunction(torch.autograd.Function):
         """
         torch_nvtx_range_push("ORTZeROOffloadPostForwardFunction::forward")
 
-        outputs = unflatten_data_using_schema(output_tensors, output_schema)
+        # outputs = unflatten_data_using_schema(output_tensors, output_schema)
+        outputs = unflatten_data_using_schema_and_reset_func(output_tensors, output_schema, outputs_data_set_func)
 
         # STAGE3WARN#3: _post_forward_module_hook's second argument `input is not used, so we just pass a None here.
         updated_outputs = post_forward_function(module, None, outputs)
@@ -403,14 +418,14 @@ class ORTZeROOffloadPostForwardFunction(torch.autograd.Function):
         if updated_outputs is None:
             updated_output_tensors = output_tensors
         else:
-            updated_output_tensors, _ = extract_data_and_schema(updated_outputs)
+            # updated_output_tensors, _, _, _ = extract_data_and_schema(updated_outputs)
+            updated_output_tensors = extract_data_with_access_func(updated_outputs, outputs_data_access_func)
 
         ctx.module = module
         ctx.pre_backward_function = pre_backward_function
-        rets = [o.detach().requires_grad_(o.requires_grad) for o in updated_output_tensors]
 
         torch_nvtx_range_pop()
-        return tuple(rets)
+        return tuple(updated_output_tensors)
 
     @staticmethod
     def backward(ctx, *grads):
@@ -423,7 +438,7 @@ class ORTZeROOffloadPostForwardFunction(torch.autograd.Function):
                 updated_args = ret
 
         torch_nvtx_range_pop()
-        return (None, None, None, None, *updated_args)
+        return (None, None, None, None, None, None, *updated_args)
 
     @staticmethod
     def infer_shape(
@@ -437,7 +452,7 @@ class ORTZeROOffloadPostForwardFunction(torch.autograd.Function):
     def alias_input(node_proto_str: str):
         node = onnx.NodeProto()
         node.ParseFromString(node_proto_str)
-        non_tensor_fw_input_count = 4
+        non_tensor_fw_input_count = 6
         fw_output_count = len(node.output) - 1  # exclude the first output appended in ONNX
         fw_alias_map = [-1] * fw_output_count
         bw_alias_map = [-1] * (non_tensor_fw_input_count + len(node.input))
@@ -512,14 +527,15 @@ class ZeROOffloadSubscriber(SubscriberBase):
 
         ## Handle `_pre_forward_module_hook`
 
-        args_tensors, args_schema = extract_data_and_schema(updated_args)
-        kwargs_tensors, kwargs_schema = extract_data_and_schema(kwargs)
+        args_tensors, args_schema, args_data_access_func, args_data_set_func = extract_data_and_schema(updated_args)
+        kwargs_tensors, kwargs_schema, kwargs_data_access_func, kwargs_data_set_func = extract_data_and_schema(kwargs)
 
         _pre_forward_module_hook = self._functions.get("_pre_forward_module_hook")
 
         args_tensor_count = len(args_tensors)
         kwargs_tensor_count = len(kwargs_tensors)
 
+        @nvtx_function_decorator
         def _wrap_pre_forward_module_hook(module, args, kwargs):
             rets = _pre_forward_module_hook(module, args)
             updated_args, updated_kwargs = args, kwargs
@@ -550,7 +566,11 @@ class ZeROOffloadSubscriber(SubscriberBase):
             module,
             _wrap_pre_forward_module_hook,
             args_schema,
+            args_data_access_func,
+            args_data_set_func,
             kwargs_schema,
+            kwargs_data_access_func,
+            kwargs_data_set_func,
             args_tensor_count,
             kwargs_tensor_count,
             *all_tensors,
@@ -581,10 +601,11 @@ class ZeROOffloadSubscriber(SubscriberBase):
 
         """
 
-        outputs_tensors, outputs_schema = extract_data_and_schema(outputs)
+        outputs_tensors, outputs_schema, outputs_data_access_func, outputs_data_set_func = extract_data_and_schema(outputs)
 
         _post_forward_module_hook = self._functions.get("_post_forward_module_hook")
 
+        @nvtx_function_decorator
         def _wrap_post_forward_module_hook(module, input, outputs):
             # STAGE3WARN#6: _post_forward_module_hook applied this for each tensor output, so we do a simple wrap here.
             from deepspeed.runtime.zero.partition_parameters import is_zero_param
@@ -602,7 +623,7 @@ class ZeROOffloadSubscriber(SubscriberBase):
         self._check_all_tensor(outputs_tensors, module, "post_forward_module_apply_impl input check")
 
         updated_outputs_tensors = ORTZeROOffloadPostForwardFunction.apply(
-            module, _wrap_post_forward_module_hook, None, outputs_schema, *outputs_tensors
+            module, _wrap_post_forward_module_hook, None, outputs_schema, outputs_data_access_func, outputs_data_set_func, *outputs_tensors
         )
 
         self._check_all_tensor(updated_outputs_tensors, module, "post_forward_module_apply_impl output check")
@@ -628,13 +649,13 @@ class ZeROOffloadSubscriber(SubscriberBase):
         args: ORTModelInputOutputType,
         outputs: ORTModelInputOutputType,
     ) -> Tuple[ORTModelInputOutputType, ORTModelInputOutputType]:
-        outputs_tensors, outputs_schema = extract_data_and_schema(outputs)
+        outputs_tensors, outputs_schema, outputs_data_access_func, outputs_data_set_func = extract_data_and_schema(outputs)
 
         _end_of_forward_hook = self._functions.get("_end_of_forward_hook")
         self._check_all_tensor(outputs_tensors, module, "post_forward_outmost_module_apply_impl input check")
 
         updated_outputs_tensors = ORTZeROOffloadPostForwardFunction.apply(
-            module, _end_of_forward_hook, None, outputs_schema, *outputs_tensors
+            module, _end_of_forward_hook, None, outputs_schema, outputs_data_access_func, outputs_data_set_func, *outputs_tensors
         )
 
         self._check_all_tensor(updated_outputs_tensors, module, "post_forward_outmost_module_apply_impl output check")

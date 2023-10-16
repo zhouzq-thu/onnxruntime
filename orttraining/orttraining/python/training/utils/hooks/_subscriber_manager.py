@@ -183,7 +183,7 @@ class SubscriberManager:
                     self._run_ctx, module, module_inputs, module_outputs
                 )
 
-            flatten_output_tensor_list, output_schema = extract_data_and_schema(module_outputs)
+            flatten_output_tensor_list, output_schema, _, _ = extract_data_and_schema(module_outputs)
             output_tensors = _IncrementStep.apply(self._run_ctx, *flatten_output_tensor_list)
             restored_outputs = unflatten_data_using_schema(output_tensors, output_schema)
 
@@ -245,8 +245,8 @@ class SubscriberManager:
                 module_inputs, kwargs = sub.pre_forward_module_apply(self._run_ctx, module, module_inputs, kwargs)
 
             # Tensor level hook
-            flatten_positional_input_tensor_list, input_schema = extract_data_and_schema(module_inputs)
-            flatten_keyword_input_tensor_list, keyword_input_schema = extract_data_and_schema(kwargs)
+            flatten_positional_input_tensor_list, input_schema, _, _ = extract_data_and_schema(module_inputs)
+            flatten_keyword_input_tensor_list, keyword_input_schema, _, _ = extract_data_and_schema(kwargs)
 
             for sub in self._subscribers:
                 tensor_list = []
@@ -273,7 +273,7 @@ class SubscriberManager:
                 _, module_outputs = sub.post_forward_module_apply(self._run_ctx, module, module_inputs, module_outputs)
 
             # Tensor level hook
-            flatten_output_tensor_list, output_schema = extract_data_and_schema(module_outputs)
+            flatten_output_tensor_list, output_schema, _, _ = extract_data_and_schema(module_outputs)
             for sub in self._subscribers:
                 tensor_list = []
                 for tensor_index, tensor in enumerate(flatten_output_tensor_list):

@@ -300,7 +300,7 @@ def unflatten_user_output(output_schema: Optional[ORTModelInputOutputSchemaType]
 
 def _extract_schema(data: ORTModelInputOutputType, device) -> ORTModelInputOutputSchemaType:
     try:
-        _, schema = extract_data_and_schema(data, constant_as_tensor=True, device=device)
+        _, schema, _, _ = extract_data_and_schema(data, constant_as_tensor=True, device=device)
         return schema
     except TypeError as e:
         raise wrap_exception(ORTModuleIOError, TypeError(f"ORTModule fails to extract schema from data: {e}")) from None

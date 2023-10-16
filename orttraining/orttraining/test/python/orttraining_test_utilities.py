@@ -3,10 +3,11 @@
 
 from collections import abc
 
+import copy
 import pytest
 import torch
 
-from onnxruntime.training.utils import extract_data_and_schema, unflatten_data_using_schema
+from onnxruntime.training.utils import extract_data_and_schema, unflatten_data_using_schema, PrimitiveType, extract_data_with_access_func, unflatten_data_using_schema_and_reset_func
 from onnxruntime.training.utils.torch_io_helper import _TensorStub
 
 
@@ -229,8 +230,11 @@ from onnxruntime.training.utils.torch_io_helper import _TensorStub
 )
 @pytest.mark.parametrize(
     "flag",
-    [0, 1, 2],
-)  # 0: flatten, 1: unflatten, 2: flatten and unflatten
+    [0, 1, 2, 3, 4],
+)
+# 0: flatten, 1: unflatten, 2: flatten and unflatten,
+# 3: flatten, then flatten with data access func, compare the results
+# 4: flatten, then unflatten with data reset func, compare the results
 def test_data_flatten_and_unflatten(input_output_map, flag: int):
     raw_data = input_output_map[0]
     flatten_data = input_output_map[1]
@@ -255,7 +259,7 @@ def test_data_flatten_and_unflatten(input_output_map, flag: int):
                 assert real == expected
 
     if flag == 0:
-        out, schema = extract_data_and_schema(raw_data)
+        out, schema, _, _ = extract_data_and_schema(raw_data)
         assert all([torch.allclose(o, d) if isinstance(o, torch.Tensor) else o == d for o, d in zip(out, flatten_data)])
         if not isinstance(raw_data, torch.Tensor):
             assert type(schema) == type(raw_data)
@@ -263,7 +267,7 @@ def test_data_flatten_and_unflatten(input_output_map, flag: int):
         assert str(schema) == str(flatten_schema)
 
         flatten_data_constant_as_tensor = input_output_map[3]
-        out, schema = extract_data_and_schema(raw_data, constant_as_tensor=True, device=torch.device("cpu"))
+        out, schema, _, _ = extract_data_and_schema(raw_data, constant_as_tensor=True, device=torch.device("cpu"))
         if isinstance(
             raw_data,
             (
@@ -284,7 +288,37 @@ def test_data_flatten_and_unflatten(input_output_map, flag: int):
         restored_data = unflatten_data_using_schema(flatten_data, flatten_schema)
         _recursive_compare(restored_data, raw_data)
     elif flag == 2:
-        out, schema = extract_data_and_schema(raw_data)
+        out, schema, _, _ = extract_data_and_schema(raw_data)
         restored_data = unflatten_data_using_schema(out, schema)
 
         _recursive_compare(restored_data, raw_data)
+    elif flag == 3:
+        out, schema, out_retrieve_func, _ = extract_data_and_schema(raw_data)
+        out2 = extract_data_with_access_func(raw_data, out_retrieve_func)
+        assert all([isinstance(o, torch.Tensor) and torch.allclose(o, d) for o, d in zip(out, out2)])
+
+
+        flatten_data_constant_as_tensor = input_output_map[3]
+        out, schema, out_retrieve_func, _ = extract_data_and_schema(raw_data, constant_as_tensor=True, device=torch.device("cpu"))
+        out2 = extract_data_with_access_func(raw_data, out_retrieve_func)
+        if isinstance(
+            raw_data,
+            (
+                type(None),
+                str,
+            ),
+        ):
+            assert out == out2
+        else:
+            print(f"out: {out}, out2: {out2}")
+            assert all([isinstance(o, torch.Tensor) and torch.allclose(o, d) for o, d in zip(out, out2)])
+
+    elif flag == 4:
+        out, schema, _, schema_set_func = extract_data_and_schema(raw_data)
+        recovered_data = unflatten_data_using_schema_and_reset_func(out, schema, schema_set_func)
+        _recursive_compare(recovered_data, raw_data)
+
+        flatten_data_constant_as_tensor = input_output_map[3]
+        out, schema, _, schema_set_func = extract_data_and_schema(raw_data, constant_as_tensor=True, device=torch.device("cpu"))
+        recovered_data = unflatten_data_using_schema_and_reset_func(out, schema, schema_set_func)
+        _recursive_compare(recovered_data, raw_data)

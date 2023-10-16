@@ -9,6 +9,8 @@ from onnxruntime.training.utils.torch_io_helper import (
     PrimitiveType,
     extract_data_and_schema,
     unflatten_data_using_schema,
+    extract_data_with_access_func,
+    unflatten_data_using_schema_and_reset_func,
 )
 from onnxruntime.training.utils.torch_profile_utils import (
     nvtx_function_decorator,
@@ -23,6 +25,8 @@ __all__ = [
     "ORTModelInputOutputSchemaType",
     "extract_data_and_schema",
     "unflatten_data_using_schema",
+    "extract_data_with_access_func",
+    "unflatten_data_using_schema_and_reset_func",
     "pytorch_dtype_to_onnx",
     "onnx_dtype_to_pytorch",
     "torch_nvtx_range_push",

@@ -256,10 +256,10 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
         ctx.dtypes = [p.dtype for p in passed_in_param_tensors]
         ctx.devices = [p.device for p in passed_in_param_tensors]
 
-        # args = unflatten_data_using_schema(args_tensors, args_schema)
-        args = unflatten_data_using_schema_and_reset_func(args_tensors, args_schema, args_data_set_func)
-        # kwargs = unflatten_data_using_schema(kwargs_tensors, kwargs_schema)
-        kwargs = unflatten_data_using_schema_and_reset_func(kwargs_tensors, kwargs_schema, kwargs_data_set_func)
+        args = unflatten_data_using_schema(args_tensors, args_schema)
+        # args = unflatten_data_using_schema_and_reset_func(args_tensors, args_schema, args_data_set_func)
+        kwargs = unflatten_data_using_schema(kwargs_tensors, kwargs_schema)
+        # kwargs = unflatten_data_using_schema_and_reset_func(kwargs_tensors, kwargs_schema, kwargs_data_set_func)
 
         # We will re-retrieve the parameter tensors other than use the one passed in input (of size 0 for
         # those partitioned params).
@@ -409,8 +409,8 @@ class ORTZeROOffloadPostForwardFunction(torch.autograd.Function):
         """
         torch_nvtx_range_push("ORTZeROOffloadPostForwardFunction::forward")
 
-        # outputs = unflatten_data_using_schema(output_tensors, output_schema)
-        outputs = unflatten_data_using_schema_and_reset_func(output_tensors, output_schema, outputs_data_set_func)
+        outputs = unflatten_data_using_schema(output_tensors, output_schema)
+        # outputs = unflatten_data_using_schema_and_reset_func(output_tensors, output_schema, outputs_data_set_func)
 
         # STAGE3WARN#3: _post_forward_module_hook's second argument `input is not used, so we just pass a None here.
         updated_outputs = post_forward_function(module, None, outputs)

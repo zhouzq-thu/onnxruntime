@@ -81,7 +81,6 @@ struct Scale {
   }
 
   __forceinline__ __host__ __device__ void operator()(ck::half4_t& ys, const ck::f8x4_t& xs) const {
-    // NOTE: no improvement
     float scale = nullptr == dev_scale_ptr ? scale_value : *dev_scale_ptr;
     constexpr const uint32_t mask = 0x7fff7fff;
     constexpr const uint32_t sign_mask = 0x80008000;

@@ -780,7 +780,7 @@ Status QnnBackendManager::ExtractBackendProfilingInfo() {
   ORT_RETURN_IF(QNN_PROFILE_NO_ERROR != result, "Failed to get profile events.");
 
   if (num_events > 0) {
-    LOGS(*logger_, VERBOSE) << "profile_events: " << profile_events << " num_events: " << num_events;
+    LOGS(*logger_, INFO) << "profile_events: " << profile_events << " num_events: " << num_events;
   }
 
   for (size_t event_idx = 0; event_idx < num_events; event_idx++) {
@@ -797,7 +797,7 @@ Status QnnBackendManager::ExtractProfilingSubEvents(QnnProfile_EventId_t profile
   ORT_RETURN_IF(QNN_PROFILE_NO_ERROR != result, "Failed to get profile sub events.");
 
   if (num_sub_events > 0) {
-    LOGS(*logger_, VERBOSE) << "profile_sub_events: " << profile_sub_events << " num_sub_events: " << num_sub_events;
+    LOGS(*logger_, INFO) << "profile_sub_events: " << profile_sub_events << " num_sub_events: " << num_sub_events;
   }
 
   for (size_t sub_event_idx = 0; sub_event_idx < num_sub_events; sub_event_idx++) {
@@ -812,7 +812,7 @@ Status QnnBackendManager::ExtractProfilingEvent(QnnProfile_EventId_t profile_eve
   auto result = qnn_interface_.profileGetEventData(profile_event_id, &event_data);
   ORT_RETURN_IF(QNN_PROFILE_NO_ERROR != result, "Failed to get provile event data.");
 
-  LOGS(*logger_, VERBOSE) << "Profiling Event Info - Event Type: " << event_data.type
+  LOGS(*logger_, INFO) << "Profiling Event Info - Event Type: " << event_data.type
                           << ", Event Value: " << event_data.value
                           << ", Event Identifier: " << event_data.identifier
                           << ", Event Unit: " << event_data.unit;

@@ -225,12 +225,12 @@ def extract_data_and_schema(
             for i, val in enumerate(data):
                 stubbed_schema.append(_flatten_from_data(val, f"{prefix_name}_{i}" if prefix_name else f"{i}", f"{tensor_access_func_str}[{i}]", f"{reset_func_str}[{i}]"))
 
-            # try:
-            #     # namedtuple can be created by passing the list sequence to method _make
-            #     stubbed_schema = sequence_type._make(stubbed_schema)
-            # except AttributeError:
-            #     # If attribute error is encountered, create the sequence directly
-            #     stubbed_schema = sequence_type(stubbed_schema)
+            try:
+                # namedtuple can be created by passing the list sequence to method _make
+                stubbed_schema = sequence_type._make(stubbed_schema)
+            except AttributeError:
+                # If attribute error is encountered, create the sequence directly
+                stubbed_schema = sequence_type(stubbed_schema)
             return stubbed_schema
         elif isinstance(data, abc.Mapping):
             dict_type = type(data)

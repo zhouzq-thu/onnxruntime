@@ -135,6 +135,8 @@ class QnnBackendManager {
 
   Status UnloadLib(void* handle);
 
+  Status DestroyPowerConfigID();
+
   void* LibFunction(void* handle, const char* symbol, std::string& error_msg);
 
   template <class T>
@@ -205,6 +207,8 @@ class QnnBackendManager {
   std::set<HMODULE> mod_handles_;
 #endif
   const std::string qnn_saver_path_;
+  uint32_t powerconfig_client_id_ = 0;
+  bool has_power_config_id_ = false;
 };
 
 }  // namespace qnn

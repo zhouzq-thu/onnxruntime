@@ -4,6 +4,8 @@
 #include "qnn_model.h"
 
 #include <iostream>
+#include <fstream>
+
 #include "QnnOpDef.h"
 #include "HTP/QnnHtpGraph.h"
 
@@ -88,7 +90,8 @@ const NodeUnit& QnnModel::GetNodeUnit(const Node* node,
 }
 
 Status QnnModel::ComposeGraph(const GraphViewer& graph_viewer,
-                              const onnxruntime::Node& fused_node) {
+                              const onnxruntime::Node& fused_node,
+                              const std::string& debug_json_graph_path) {
   LOGS(logger_, VERBOSE) << "ComposeGraph Graph name: " << graph_viewer.Name();
 
   // Holder for the NodeUnits in the graph, this will guarantee the NodeUnits is
@@ -127,6 +130,7 @@ Status QnnModel::ComposeGraph(const GraphViewer& graph_viewer,
     const QnnGraph_Config_t** graph_configs = nullptr;
 #endif
     bool rt = qnn_model_wrapper.CreateQnnGraph(qnn_backend_manager_->GetQnnContext(), graph_name, graph_configs);
+    LOGS(logger_, WARNING) << "CREATED GRAPH WITH OPTs";
     if (!rt) {
       return ORT_MAKE_STATUS(ONNXRUNTIME, FAIL, "Failed to initialize qnn_model_wrapper.");
     }
@@ -138,7 +142,7 @@ Status QnnModel::ComposeGraph(const GraphViewer& graph_viewer,
   }
 
   // Op builer
-  const auto& node_indices = graph_viewer.GetNodesInTopologicalOrder();
+  const auto& node_indices = graph_viewer.GetNodesInTopologicalOrder(ExecutionOrder::PRIORITY_BASED);  // Inputs first
   for (size_t i = 0; i < node_indices.size(); i++) {
     const auto* node(graph_viewer.GetNode(node_indices[i]));
 
@@ -147,21 +151,35 @@ Status QnnModel::ComposeGraph(const GraphViewer& graph_viewer,
     // Q, DQ nodes in the node unit only carry the quantization parameters
     // Add the QNN node when it is the target node (It's a normal node or a singel Q/DQ node)
     const std::string& op_type = node_unit.OpType();
-    LOGS(logger_, VERBOSE) << " node name: [" << node->Name()
+    if (node != &node_unit.GetNode()) {
+      continue;
+    }
+
+    LOGS(logger_, WARNING) << " node name: [" << node->Name()
                            << "] node optype: [" << op_type
                            << "] as part of the NodeUnit type: [" << node_unit.OpType()
                            << "] name: [" << node_unit.Name()
                            << "]";
-    if (node != &node_unit.GetNode()) {
-      continue;
-    }
 
     if (const auto* op_builder = GetOpBuilder(op_type)) {
       ORT_RETURN_IF_ERROR(op_builder->AddToModelBuilder(qnn_model_wrapper, node_unit, logger_));
     }
   }
 
-  ORT_RETURN_IF_NOT(qnn_model_wrapper.ComposeQnnGraph(), "Failed to compose Qnn graph.");
+  const bool build_debug_json_graph = !debug_json_graph_path.empty();
+  ORT_RETURN_IF_NOT(qnn_model_wrapper.ComposeQnnGraph(build_debug_json_graph), "Failed to compose Qnn graph.");
+
+  if (build_debug_json_graph) {
+    const nlohmann::json& json_graph = qnn_model_wrapper.GetQnnJSONGraph();
+    std::ofstream ofs(debug_json_graph_path);
+
+    if (ofs.is_open()) {
+      ofs << json_graph.dump();
+      ofs.close();
+    } else {
+      LOGS(logger_, WARNING) << "Could not open JSON graph file: " << debug_json_graph_path;
+    }
+  }
 
   bool rt = GetGraphInfoFromModel(qnn_model_wrapper);
   if (!rt) {

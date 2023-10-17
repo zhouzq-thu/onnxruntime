@@ -248,7 +248,7 @@ Status ResizeOpBuilder::ProcessAttributesAndOutputs(QnnModelWrapper& qnn_model_w
     qnn_align_corners.dataType = QNN_DATATYPE_BOOL_8;
     qnn_align_corners.bool8Value = static_cast<uint8_t>(transformation_mode == "align_corners");
     QnnParamWrapper qnn_align_corners_param(node_unit.Index(), node_unit.Name(),
-                                            QNN_OP_RESIZE_BILINEAR_PARAM_ALIGN_CORNERS, qnn_align_corners);
+                                            QNN_OP_RESIZE_NEAREST_NEIGHBOR_PARAM_ALIGN_CORNERS, qnn_align_corners);
     param_tensor_names.push_back(qnn_align_corners_param.GetParamTensorName());
     qnn_model_wrapper.AddParamWrapper(std::move(qnn_align_corners_param));
 
@@ -256,6 +256,27 @@ Status ResizeOpBuilder::ProcessAttributesAndOutputs(QnnModelWrapper& qnn_model_w
     Qnn_Scalar_t qnn_half_pixel = QNN_SCALAR_INIT;
     qnn_half_pixel.dataType = QNN_DATATYPE_BOOL_8;
     qnn_half_pixel.bool8Value = static_cast<uint8_t>(transformation_mode == "half_pixel");
+    QnnParamWrapper qnn_half_pixel_param(node_unit.Index(), node_unit.Name(),
+                                         QNN_OP_RESIZE_NEAREST_NEIGHBOR_PARAM_HALF_PIXEL_CENTERS, qnn_half_pixel);
+    param_tensor_names.push_back(qnn_half_pixel_param.GetParamTensorName());
+    qnn_model_wrapper.AddParamWrapper(std::move(qnn_half_pixel_param));
+  } else if (is_npu_backend && interp_mode == "linear" && nearest_mode == "floor") {
+    qnn_op_type = "ResizeBilinear";
+
+    // Parameter 'align_corners'
+    Qnn_Scalar_t qnn_align_corners = QNN_SCALAR_INIT;
+    qnn_align_corners.dataType = QNN_DATATYPE_BOOL_8;
+    qnn_align_corners.bool8Value = static_cast<uint8_t>(transformation_mode == "align_corners");
+    QnnParamWrapper qnn_align_corners_param(node_unit.Index(), node_unit.Name(),
+                                            QNN_OP_RESIZE_BILINEAR_PARAM_ALIGN_CORNERS, qnn_align_corners);
+    param_tensor_names.push_back(qnn_align_corners_param.GetParamTensorName());
+    qnn_model_wrapper.AddParamWrapper(std::move(qnn_align_corners_param));
+
+    // Parameter 'half_pixel_centers'
+    Qnn_Scalar_t qnn_half_pixel = QNN_SCALAR_INIT;
+    qnn_half_pixel.dataType = QNN_DATATYPE_BOOL_8;
+    qnn_half_pixel.bool8Value = static_cast<uint8_t>(transformation_mode == "half_pixel" ||
+                                                     transformation_mode == "pytorch_half_pixel");
     QnnParamWrapper qnn_half_pixel_param(node_unit.Index(), node_unit.Name(),
                                          QNN_OP_RESIZE_BILINEAR_PARAM_HALF_PIXEL_CENTERS, qnn_half_pixel);
     param_tensor_names.push_back(qnn_half_pixel_param.GetParamTensorName());

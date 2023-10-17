@@ -1036,18 +1036,20 @@ common::Status InferenceSession::TransformGraph(onnxruntime::Graph& graph, bool 
       // a QDQ format model. The transpose optimizer can now look past DQ nodes to directly update initializers which
       // takes care of most models without needing this.
       //
-      // if (modified) {
-      //  ORT_RETURN_IF_ERROR_SESSIONID_(
-      //      graph_transformer_mgr_.ApplyTransformers(graph_to_transform, TransformerLevel::Level1, *session_logger_));
-      //
-      // debug the graph after the L1 transformers have run against any layout transformation changes.
-      // this is prior to GraphPartitioner::GetCapabilityForEP calling IExecutionProvider::GetCapability the second
-      // time to validate the EP that requested the layout transformation can take all nodes using the new layout.
-      // if that fails, this allows debugging the graph used in that GetCapability call.
-      // if (debug_graph_fn) {
-      //  debug_graph_fn(graph_to_transform);
-      //}
-      //}
+      #if 1
+      if (modified) {
+        ORT_RETURN_IF_ERROR_SESSIONID_(
+            graph_transformer_mgr_.ApplyTransformers(graph_to_transform, TransformerLevel::Level1, *session_logger_));
+
+        // debug the graph after the L1 transformers have run against any layout transformation changes.
+        // this is prior to GraphPartitioner::GetCapabilityForEP calling IExecutionProvider::GetCapability the second
+        // time to validate the EP that requested the layout transformation can take all nodes using the new layout.
+        // if that fails, this allows debugging the graph used in that GetCapability call.
+        if (debug_graph_fn) {
+          debug_graph_fn(graph_to_transform);
+        }
+      }
+      #endif
 
       return Status::OK();
     };

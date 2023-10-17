@@ -324,7 +324,32 @@ Status QnnBackendManager::CreateDevice() {
 
   LOGS_DEFAULT(INFO) << "Create device.";
   if (nullptr != qnn_interface_.deviceCreate) {
-    auto result = qnn_interface_.deviceCreate(log_handle_, nullptr, &device_handle_);
+    Qnn_ErrorHandle_t result{};
+
+    if (qnn_backend_type_ == QnnBackendType::HTP) {
+#if 0
+      QnnHtpDevice_CustomConfig_t customConfig;
+      customConfig.option   = QNN_HTP_DEVICE_CONFIG_OPTION_SOC;
+      customConfig.socModel = QNN_SOC_MODEL_SM8550;
+      QnnDevice_Config_t devConfig;
+      devConfig.option = QNN_DEVICE_CONFIG_OPTION_CUSTOM;
+      devConfig.customConfig = &customConfig;
+      const QnnDevice_Config_t* pDeviceConfig[] = {&devConfig, NULL};
+#else
+      QnnHtpDevice_CustomConfig_t customConfig;
+      customConfig.option = QNN_HTP_DEVICE_CONFIG_OPTION_ARCH;
+      customConfig.arch.arch = QNN_HTP_DEVICE_ARCH_V68;
+      customConfig.arch.deviceId = 0;  // Id of device to be used. If single device is used by default 0.
+      QnnDevice_Config_t devConfig;
+      devConfig.option = QNN_DEVICE_CONFIG_OPTION_CUSTOM;
+      devConfig.customConfig = &customConfig;
+      const QnnDevice_Config_t* pDeviceConfig[] = {&devConfig, NULL};
+#endif
+      result = qnn_interface_.deviceCreate(log_handle_, pDeviceConfig, &device_handle_);
+      LOGS_DEFAULT(WARNING) << "CREATED DEVICE WITH CUSTOM CONFIGS";
+    } else {
+      result = qnn_interface_.deviceCreate(log_handle_, nullptr, &device_handle_);
+    }
     if (QNN_SUCCESS != result) {
       return ORT_MAKE_STATUS(ONNXRUNTIME, FAIL, "Failed to create device. Error: ", result);
     }
@@ -583,9 +608,9 @@ Status QnnBackendManager::SetHtpPowerConfig() {
                 "HTP infra type = ", htp_infra->infraType, ", which is not perf infra type.");
   QnnHtpDevice_PerfInfrastructure_t& htp_perf_infra = htp_infra->perfInfra;
   // Get power client id
-  uint32_t powerconfig_client_id = 0;
-  status = htp_perf_infra.createPowerConfigId(/*device_id=*/0, /*core_id=*/0, &powerconfig_client_id);
+  status = htp_perf_infra.createPowerConfigId(/*device_id=*/0, /*core_id=*/0, &powerconfig_client_id_);
   ORT_RETURN_IF(QNN_SUCCESS != status, "createPowerConfigId failed.");
+  has_power_config_id_ = true;
 
   constexpr const int kNumConfigs = 1;
   std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> power_configs(
@@ -593,7 +618,7 @@ Status QnnBackendManager::SetHtpPowerConfig() {
   QnnHtpPerfInfrastructure_PowerConfig_t& dcvs_config = power_configs[0];
   dcvs_config.option = QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_DCVS_V3;
   QnnHtpPerfInfrastructure_DcvsV3_t& dcvs_v3 = dcvs_config.dcvsV3Config;
-  dcvs_v3.contextId = powerconfig_client_id;
+  dcvs_v3.contextId = powerconfig_client_id_;
   dcvs_v3.setSleepDisable = 0;
   dcvs_v3.sleepDisable = 0;
   dcvs_v3.setDcvsEnable = 1;
@@ -691,7 +716,7 @@ Status QnnBackendManager::SetHtpPowerConfig() {
       break;
   }
   std::vector<const QnnHtpPerfInfrastructure_PowerConfig_t*> perf_power_configs_ptr_ = ObtainNullTermPtrVector(power_configs);
-  status = htp_perf_infra.setPowerConfig(powerconfig_client_id, perf_power_configs_ptr_.data());
+  status = htp_perf_infra.setPowerConfig(powerconfig_client_id_, perf_power_configs_ptr_.data());
   ORT_RETURN_IF(QNN_SUCCESS != status, "setPowerConfig failed for HTP performance mode.");
 
   // Set rpc control latency here, but note that v68 doesn't support rpc polling mode.
@@ -705,10 +730,29 @@ Status QnnBackendManager::SetHtpPowerConfig() {
     rpc_polling_time.option = QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_RPC_POLLING_TIME;
     rpc_control_latency.rpcControlLatencyConfig = rpc_control_latency_;
     perf_power_configs_ptr_ = ObtainNullTermPtrVector(rpc_power_configs);
-    status = htp_perf_infra.setPowerConfig(powerconfig_client_id, perf_power_configs_ptr_.data());
+    status = htp_perf_infra.setPowerConfig(powerconfig_client_id_, perf_power_configs_ptr_.data());
     ORT_RETURN_IF(QNN_SUCCESS != status, "setPowerConfig failed for RPC control latency.");
   }
 
+  return Status::OK();
+}
+
+Status QnnBackendManager::DestroyPowerConfigID() {
+  if (!has_power_config_id_) {
+    return Status::OK();
+  }
+
+  QnnDevice_Infrastructure_t qnn_device_infra = nullptr;
+  auto status = qnn_interface_.deviceGetInfrastructure(&qnn_device_infra);
+  ORT_RETURN_IF(QNN_SUCCESS != status, "backendGetPerfInfrastructure failed.");
+
+  auto* htp_infra = static_cast<QnnHtpDevice_Infrastructure_t*>(qnn_device_infra);
+  ORT_RETURN_IF(QNN_HTP_DEVICE_INFRASTRUCTURE_TYPE_PERF != htp_infra->infraType,
+                "HTP infra type = ", htp_infra->infraType, ", which is not perf infra type.");
+  QnnHtpDevice_PerfInfrastructure_t& htp_perf_infra = htp_infra->perfInfra;
+
+  Qnn_ErrorHandle_t destroy_ret = htp_perf_infra.destroyPowerConfigId(powerconfig_client_id_);
+  ORT_RETURN_IF(QNN_SUCCESS != destroy_ret, "destroyPowerConfigId failed.");
   return Status::OK();
 }
 
@@ -731,7 +775,12 @@ void QnnBackendManager::ReleaseResources() {
     return;
   }
 
-  auto result = ReleaseContext();
+  auto result = DestroyPowerConfigID();
+  if (Status::OK() != result) {
+    ORT_THROW("Failed to DestroyPowerConfigID.");
+  }
+
+  result = ReleaseContext();
   if (Status::OK() != result) {
     ORT_THROW("Failed to ReleaseContext.");
   }
@@ -813,9 +862,9 @@ Status QnnBackendManager::ExtractProfilingEvent(QnnProfile_EventId_t profile_eve
   ORT_RETURN_IF(QNN_PROFILE_NO_ERROR != result, "Failed to get provile event data.");
 
   LOGS(*logger_, INFO) << "Profiling Event Info - Event Type: " << event_data.type
-                          << ", Event Value: " << event_data.value
-                          << ", Event Identifier: " << event_data.identifier
-                          << ", Event Unit: " << event_data.unit;
+                       << ", Event Value: " << event_data.value
+                       << ", Event Identifier: " << event_data.identifier
+                       << ", Event Unit: " << event_data.unit;
 
   return Status::OK();
 }

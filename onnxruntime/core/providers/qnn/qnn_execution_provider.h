@@ -68,6 +68,8 @@ class QNNExecutionProvider : public IExecutionProvider {
   std::string context_cache_path_ = "";
   bool disable_cpu_ep_fallback_ = false;  // True if CPU EP fallback has been disabled for this session.
   std::unique_ptr<qnn::QnnCacheModelHandler> qnn_cache_model_handler_;
+  bool enable_json_graphs_dump_ = false;
+  std::string json_graphs_dir_ = "";
 };
 
 }  // namespace onnxruntime

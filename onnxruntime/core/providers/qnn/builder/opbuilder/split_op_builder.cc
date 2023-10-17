@@ -71,7 +71,7 @@ Status SplitOpBuilder::ProcessAttributesAndOutputs(QnnModelWrapper& qnn_model_wr
       const int64_t* tensor_data = reinterpret_cast<const int64_t*>(unpacked_tensor.data());
       size_t tensor_byte_size = unpacked_tensor.size();
       size_t size = tensor_byte_size / sizeof(int64_t);
-      split_index.push_back(0);  // QNN need the start index of each range and starts from 0
+      // split_index.push_back(0);  // QNN need the start index of each range and starts from 0
       std::transform(tensor_data, tensor_data + size, std::back_inserter(split_index),
                      [](int64_t item) { return SafeInt<uint32_t>(item); });
       split_index.pop_back();
@@ -84,7 +84,9 @@ Status SplitOpBuilder::ProcessAttributesAndOutputs(QnnModelWrapper& qnn_model_wr
       auto split = node_helper.Get("split", std::vector<int32_t>{0});
       uint32_t split_it = 0;
       for (size_t i = 0; i < split.size(); ++i) {
-        split_index.push_back(split_it);
+        if (i > 0) {
+          split_index.push_back(split_it);
+        }
         split_it += split[i];
       }
     }
@@ -101,7 +103,9 @@ Status SplitOpBuilder::ProcessAttributesAndOutputs(QnnModelWrapper& qnn_model_wr
     auto step = SafeInt<uint32_t>(input_shape.at(axis_value) / num_outputs);
     uint32_t split_it = 0;
     for (size_t i = 0; i < num_outputs; ++i) {
-      split_index.push_back(split_it);
+      if (i > 0) {
+        split_index.push_back(split_it);
+      }
       split_it += step;
     }
   }

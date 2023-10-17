@@ -201,6 +201,15 @@ const Qnn_QuantizeParams_t& GetQnnTensorQParams(const Qnn_Tensor_t& qnn_tensor) 
   }
 }
 
+uint32_t CalcQnnTensorNumElems(const Qnn_Tensor_t& qnn_tensor) {
+  uint32_t* qnn_tensor_dims = GetQnnTensorDims(qnn_tensor);
+  uint32_t qnn_tensor_rank = GetQnnTensorRank(qnn_tensor);
+  return std::accumulate(qnn_tensor_dims,
+                         qnn_tensor_dims + qnn_tensor_rank,
+                         1,
+                         std::multiplies<uint32_t>());
+}
+
 bool CreateTensorInQnnGraph(const QNN_INTERFACE_VER_TYPE& qnn_interface,
                             const Qnn_GraphHandle_t& graph,
                             const std::string& node_name,

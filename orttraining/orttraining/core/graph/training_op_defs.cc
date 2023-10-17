@@ -5001,6 +5001,39 @@ Return true if all elements are true and false otherwise.
           "T",
           {"tensor(float16)", "tensor(float)", "tensor(double)"},
           "Constrain input and output types to float tensors.");
+
+  ONNX_CONTRIB_OPERATOR_SCHEMA(FP8Linear)
+      .SetDomain(kMSDomain)
+      .SinceVersion(1)
+      .SetDoc("FP8Linear")
+      .Input(0, "input", "input data", "T")
+      .Input(1, "weight", "weight data", "T")
+      .Input(2, "bias", "bias data", "T")
+      .Output(0, "output", "output data", "T")
+      .Output(1, "input_t", "transposed input data", "tensor(float8e4m3fn)")
+      .Output(2, "weight_t", "transposed output data", "tensor(float8e4m3fn)")
+      .Output(3, "scale_inv", "scale inverse", "tensor(float)")
+      .TypeConstraint(
+          "T",
+          {"tensor(float16)", "tensor(float)"},
+          "Constrain input and output types to float or half tensors.");
+
+  ONNX_CONTRIB_OPERATOR_SCHEMA(FP8LinearGrad)
+      .SetDomain(kMSDomain)
+      .SinceVersion(1)
+      .SetDoc("FP8LinearGrad")
+      .Input(0, "grad_output", "output gradient data", "T")
+      .Input(1, "input_t", "transposed input data", "tensor(float8e4m3fn)")
+      .Input(2, "weight_t", "transposed weight data", "tensor(float8e4m3fn)")
+      .Input(3, "scale_inv", "scale inverse", "tensor(float)")
+      .Output(0, "grad_input", "input gradient data", "T", OpSchema::Optional)
+      .Output(1, "grad_weight", "weight gradient data", "T", OpSchema::Optional)
+      .Output(2, "grad_bias", "bias gradient data", "T", OpSchema::Optional)
+      .TypeConstraint(
+          "T",
+          {"tensor(float16)", "tensor(float)"},
+          "Constrain input and output types to float or half tensors.");
+
 }
 
 }  // namespace training

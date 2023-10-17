@@ -563,7 +563,9 @@ def call_python_forward_function(
             )
 
             dlpacks = [final_rets[0]]
-            dlpacks.extend(list(to_dlpack(value) if value is not None else None for value in final_rets[1:]))
+            def _wrap_dlpack(value):
+                return to_dlpack(value) if value is not None else None
+            dlpacks.extend(list(map(_wrap_dlpack, final_rets[1:])))
 
             # Inside the returned list, the first element is context and the rest
             # are DLPack tensors.

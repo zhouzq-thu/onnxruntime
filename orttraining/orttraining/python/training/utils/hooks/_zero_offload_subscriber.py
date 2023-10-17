@@ -266,7 +266,9 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
         # This is required for ORT run because in ORT graph, the tensor of size 0 will always be size 0
         # (this step is not necessary for PyTorch run, because PyTorch will re-use the same tensor
         # while .data got updated to full-sized data after pre_forward_with_kwargs_function is called).
-        partitioned_params = _ModuleToParametersRefs.get(module, _get_params_for_current_module(module))
+        if module not in _ModuleToParametersRefs:
+            _ModuleToParametersRefs[module] = _get_params_for_current_module(module)
+        partitioned_params = _ModuleToParametersRefs[module]
         ctx.partitioned_params = partitioned_params
 
         assert len(partitioned_params) == len(passed_in_param_tensors)
@@ -287,7 +289,10 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
         updated_kwargs_tensors = extract_data_with_access_func(updated_kwargs, kwargs_data_access_func)
 
         rets = tuple(updated_args_tensors + updated_kwargs_tensors)
-        rets += tuple([p.detach().requires_grad_(p.requires_grad) for p in partitioned_params])
+
+        def _do(p):
+            return p.detach().requires_grad_(p.requires_grad)
+        rets += tuple(map(_do, partitioned_params))
 
         # PyTorch exporter does not support an empty list of tensors, so we have this check.
         assert len(rets) != 0

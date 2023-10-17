@@ -21,5 +21,5 @@ if(NOT composable_kernel_POPULATED)
     ${composable_kernel_SOURCE_DIR}/include
     ${composable_kernel_BINARY_DIR}/include
     ${composable_kernel_SOURCE_DIR}/library/include)
-  target_compile_definitions(onnxruntime_composable_kernel_includes INTERFACE __fp32__ __fp16__ __bf16__ __fp8__)
+  target_compile_definitions(onnxruntime_composable_kernel_includes INTERFACE __fp32__ __fp16__ __bf16__)
 endif()

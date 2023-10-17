@@ -60,28 +60,6 @@ index b09da41a8..fca2bdf69 100644
 -    LDCONFIG
 -    HEADER_ONLY
 -)
-diff --git a/library/include/ck/library/tensor_operation_instance/gpu/gemm_splitk.hpp b/library/include/ck/library/tensor_operation_instance/gpu/gemm_splitk.hpp
-index 4cba0875d..07b0adb42 100644
---- a/library/include/ck/library/tensor_operation_instance/gpu/gemm_splitk.hpp
-+++ b/library/include/ck/library/tensor_operation_instance/gpu/gemm_splitk.hpp
-@@ -58,7 +58,7 @@ void add_device_gemm_xdl_splitk_f32_f32_f32_mk_nk_mn_instances(
-         DeviceGemmSplitK<Row, Col, Row, F32, F32, F32, PassThrough, PassThrough, PassThrough>>>&
-         instances);
- #endif
--#if(defined(CK_ENABLE_FP16) || defined(CK_ENABLE_FP8))
-+#if(defined(CK_ENABLE_FP16) && defined(CK_ENABLE_FP8))
- void add_device_gemm_xdl_splitk_f8_f16_f16_km_kn_mn_instances(
-     std::vector<std::unique_ptr<
-         DeviceGemmSplitK<Col, Row, Row, F8, F16, F16, PassThrough, PassThrough, PassThrough>>>&
-@@ -182,7 +182,7 @@ struct DeviceOperationInstanceFactory<
-             }
-         }
- #endif
--#if(defined(CK_ENABLE_FP16) || defined(CK_ENABLE_FP8))
-+#if(defined(CK_ENABLE_FP16) && defined(CK_ENABLE_FP8))
-         else if constexpr(is_same_v<ADataType, f8_t> && is_same_v<BDataType, half_t> &&
-                           is_same_v<CDataType, half_t>)
-         {
 diff --git a/library/src/tensor_operation_instance/gpu/CMakeLists.txt b/library/src/tensor_operation_instance/gpu/CMakeLists.txt
 index a0478c9f0..1e7782cd4 100644
 --- a/library/src/tensor_operation_instance/gpu/CMakeLists.txt

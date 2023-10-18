@@ -548,6 +548,7 @@ def call_python_forward_function(
 
             input_tensors_used_for_fw_run[tensor_input_index] = wrapped_arg
             wrapped_args[input_position] = wrapped_arg
+            return None
 
         torch_nvtx_range_push(f"{func_name}.pre")
         # wrapped_args = []
@@ -564,7 +565,7 @@ def call_python_forward_function(
         #                                             a))
 
         # else:
-        map(_tensor_handle, position_to_tensor_index_map)
+        _ = map(_tensor_handle, position_to_tensor_index_map)
         torch_nvtx_range_pop()
 
         with torch.set_grad_enabled(is_training_mode):

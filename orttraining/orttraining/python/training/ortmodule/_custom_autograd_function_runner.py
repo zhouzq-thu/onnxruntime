@@ -39,7 +39,7 @@ class CustomFuncOpKernelInfo:
         # instances of a same named PythonOp/PythonOpGrad in one session, or multiple sessions.
         self.kernel_invoke_id = kernel_invoke_id
 
-        self.position_to_tensor_index_map: Optional[Dict[int, int]] = None
+        self.position_to_tensor_index_map: Optional[Tuple[Tuple[int, ...], ...]] = None
 
         # For the tensors generated from ORT backend, there is special handling here:
         # 1. For the first time run for the kernel (the uniqueness of the kernel is defined by kernel_invoke_id),
@@ -69,6 +69,16 @@ class CustomFuncOpKernelInfo:
 
         # A list of output indices that needs to be clone before returned, due to inplace update analysis.
         self.output_indices_for_clone: Optional[List[int]] = None
+
+
+        self.tensor_input_states = OrderedDict()  # key: tensor input index, value: TensorInputState.
+
+    def check_with_input_index(self, tensor_input_index):
+        if tensor_input_index not in self.tensor_input_states:
+            is_input_index_saved_in_ctx = tensor_input_index in self.tensor_input_indices_to_save_in_ctx
+            is_input_index_marked_dirty = tensor_input_index in self.tensor_input_indices_for_mark_dirty
+            self.tensor_input_states[tensor_input_index] = [is_input_index_saved_in_ctx, is_input_index_marked_dirty]
+        return self.tensor_input_states[tensor_input_index]
 
 
 # Store the kernel-specific information that cannot be retrieved and saved by PyTorch exporter.
@@ -431,17 +441,6 @@ def _finalize_training_mode_forward(
 
     return ctx
 
-@functools.lru_cache(maxsize=None)
-def _check(tensor_input_indices_to_save_in_ctx, tensor_input_index, tensor_input_indices_for_mark_dirty):
-    is_input_index_saved_in_ctx = (
-        tensor_input_indices_to_save_in_ctx is None
-        or tensor_input_index in tensor_input_indices_to_save_in_ctx
-    )
-    is_input_index_marked_dirty = (
-        tensor_input_indices_for_mark_dirty is None
-        or tensor_input_index in tensor_input_indices_for_mark_dirty
-    )
-    return is_input_index_saved_in_ctx, is_input_index_marked_dirty
 
 
 @nvtx_function_decorator
@@ -488,15 +487,15 @@ def call_python_forward_function(
         tensor_input_indices_for_mark_dirty = kernel_info.tensor_input_indices_for_mark_dirty
 
         if kernel_info.position_to_tensor_index_map is None:
-            position_to_tensor_index_map = OrderedDict()
+            position_to_tensor_index_map: List[Tuple[int, int]] = []
             tensor_index = 0
             for i, flag in enumerate(tensor_type_flags):
                 if flag == 1:
-                    position_to_tensor_index_map[i] = tensor_index
+                    position_to_tensor_index_map.append((i, tensor_index))
                     tensor_index += 1
                     continue
-                position_to_tensor_index_map[i] = -1
-            kernel_info.position_to_tensor_index_map = position_to_tensor_index_map
+                # position_to_tensor_index_map[i] = -1
+            kernel_info.position_to_tensor_index_map = tuple(position_to_tensor_index_map)
 
         position_to_tensor_index_map = kernel_info.position_to_tensor_index_map
 
@@ -506,12 +505,12 @@ def call_python_forward_function(
         input_tensors_used_for_fw_run = OrderedDict()  # Orders matter here.
 
 
-
+        wrapped_args = list(args)
         @nvtx_function_decorator
-        def _tensor_handle(input_position, arg, grad_flag):
-            tensor_input_index = position_to_tensor_index_map[input_position]
-            if tensor_input_index == -1:
-                return arg
+        def _tensor_handle(pos_and_tensor_index):
+            input_position, tensor_input_index = pos_and_tensor_index
+            arg = args[input_position]
+            grad_flag = requires_grad_flags[input_position]
 
             # Assume it's a DLPack tensor and convert it to PyTorch tensor.
             wrapped_arg = from_dlpack(arg)
@@ -542,16 +541,16 @@ def call_python_forward_function(
                     with torch.set_grad_enabled(True):
                         wrapped_arg = wrapped_arg.clone()
                 else:
-                    is_input_index_saved_in_ctx, is_input_index_marked_dirty = _check(tensor_input_indices_to_save_in_ctx, tensor_input_index, tensor_input_indices_for_mark_dirty)
+                    is_input_index_saved_in_ctx, is_input_index_marked_dirty = kernel_info.check_with_input_index(tensor_input_index)
                     if is_input_index_saved_in_ctx or is_input_index_marked_dirty:
                         with torch.set_grad_enabled(is_input_index_marked_dirty):
                             wrapped_arg = wrapped_arg.clone()
 
             input_tensors_used_for_fw_run[tensor_input_index] = wrapped_arg
-            return wrapped_arg
+            wrapped_args[input_position] = wrapped_arg
 
         torch_nvtx_range_push(f"{func_name}.pre")
-        wrapped_args = []
+        # wrapped_args = []
         # if is_first_time_run or True:
         #     a = 0
         #     for i, (arg, requires_grad_flag,) in enumerate(zip(args, requires_grad_flags)):
@@ -565,8 +564,7 @@ def call_python_forward_function(
         #                                             a))
 
         # else:
-        wrapped_args = args
-        wrapped_args = map(_tensor_handle, range(len(args)), args, requires_grad_flags)
+        map(_tensor_handle, position_to_tensor_index_map)
         torch_nvtx_range_pop()
 
         with torch.set_grad_enabled(is_training_mode):

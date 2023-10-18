@@ -313,7 +313,7 @@ def _get_context(forward_tensor_outputs: List[torch.Tensor]) -> Tuple[any, Optio
             return False
         return True
 
-    ts = filter(_cond, forward_tensor_outputs)
+    ts = list(filter(_cond, forward_tensor_outputs))
     if ts:
         first_tensor_output = ts[0]
         # Use the first context we see because all of arg's share the same one.

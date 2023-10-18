@@ -550,7 +550,7 @@ def call_python_forward_function(
 
         # torch_nvtx_range_push(f"{func_name}.pre")
         wrapped_args = []
-        if is_first_time_run and True:
+        if is_first_time_run or True:
             a = 0
             for i, (arg, requires_grad_flag, is_tensor) in enumerate(zip(args, requires_grad_flags, tensor_type_flags)):
 

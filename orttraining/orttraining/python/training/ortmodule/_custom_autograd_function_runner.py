@@ -440,9 +440,9 @@ def _check(tensor_input_indices_to_save_in_ctx, tensor_input_index, tensor_input
 
 def _tensor_handle(input_position, arg, grad_flag, position_to_tensor_index_map, raw_input_tensors_used_inplace,
                    input_tensors_used_for_fw_run, is_training_mode, inplace_map, is_first_time_run,
-                   tensor_input_indices_to_save_in_ctx, tensor_input_indices_for_mark_dirty):
+                   tensor_input_indices_to_save_in_ctx, tensor_input_indices_for_mark_dirty, a):
     tensor_input_index = position_to_tensor_index_map[input_position]
-    if tensor_input_index == -1:
+    if tensor_input_index == -1 and a == a:
         return arg
 
     # Assume it's a DLPack tensor and convert it to PyTorch tensor.
@@ -551,14 +551,17 @@ def call_python_forward_function(
         # torch_nvtx_range_push(f"{func_name}.pre")
         wrapped_args = []
         if is_first_time_run and True:
+            a = 0
             for i, (arg, requires_grad_flag, is_tensor) in enumerate(zip(args, requires_grad_flags, tensor_type_flags)):
                 if is_tensor:
+                    a += 1
                     wrapped_args.append(_tensor_handle(i, arg, requires_grad_flag, position_to_tensor_index_map,
                                                        raw_input_tensors_used_inplace, input_tensors_used_for_fw_run,
                                                        is_training_mode, inplace_map,
                                                        is_first_time_run,
                                                        tensor_input_indices_to_save_in_ctx,
-                                                       tensor_input_indices_for_mark_dirty))
+                                                       tensor_input_indices_for_mark_dirty,
+                                                       a))
                 else:
                     wrapped_args.append(arg)
         # else:

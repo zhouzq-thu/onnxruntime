@@ -483,8 +483,8 @@ def call_python_forward_function(
 
         kernel_info = _GlobalOpKernelInfoMap[kernel_invoke_id]
 
-        tensor_input_indices_to_save_in_ctx = kernel_info.tensor_input_indices_to_save_in_ctx
-        tensor_input_indices_for_mark_dirty = kernel_info.tensor_input_indices_for_mark_dirty
+        # tensor_input_indices_to_save_in_ctx = kernel_info.tensor_input_indices_to_save_in_ctx
+        # tensor_input_indices_for_mark_dirty = kernel_info.tensor_input_indices_for_mark_dirty
 
         if kernel_info.position_to_tensor_index_map is None:
             position_to_tensor_index_map: List[Tuple[int, int]] = []
@@ -509,7 +509,7 @@ def call_python_forward_function(
         @nvtx_function_decorator
         def _tensor_handle(pos_and_tensor_index):
             input_position, tensor_input_index = pos_and_tensor_index
-            arg = args[input_position]
+            arg = wrapped_args[input_position]
             grad_flag = requires_grad_flags[input_position]
 
             # Assume it's a DLPack tensor and convert it to PyTorch tensor.

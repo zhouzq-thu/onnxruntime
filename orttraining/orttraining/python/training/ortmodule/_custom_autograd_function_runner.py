@@ -426,7 +426,7 @@ def _finalize_training_mode_forward(
 
     return ctx
 
-@functools.lru_cache(maxsize=None)
+# @functools.lru_cache(maxsize=None)
 def _check(tensor_input_indices_to_save_in_ctx, tensor_input_index, tensor_input_indices_for_mark_dirty):
     is_input_index_saved_in_ctx = (
         tensor_input_indices_to_save_in_ctx is None
@@ -501,7 +501,7 @@ def call_python_forward_function(
 
 
 
-        @nvtx_function_decorator
+        # @nvtx_function_decorator
         def _tensor_handle(input_position, arg, grad_flag):
             tensor_input_index = position_to_tensor_index_map[input_position]
             if tensor_input_index == -1:
@@ -544,7 +544,7 @@ def call_python_forward_function(
             input_tensors_used_for_fw_run[tensor_input_index] = wrapped_arg
             return wrapped_arg
 
-        torch_nvtx_range_push(f"{func_name}.pre")
+        # torch_nvtx_range_push(f"{func_name}.pre")
         wrapped_args = []
         if is_first_time_run and True:
             for i, (arg, requires_grad_flag, is_tensor) in enumerate(zip(args, requires_grad_flags, tensor_type_flags)):
@@ -558,7 +558,7 @@ def call_python_forward_function(
         #         _tensor_handle(i, arg, requires_grad_flag)
         #         for i, (arg, requires_grad_flag) in enumerate(zip(args, requires_grad_flags))
         #     ]
-        torch_nvtx_range_pop()
+        # torch_nvtx_range_pop()
 
         with torch.set_grad_enabled(is_training_mode):
             # Run autograd.Function.apply(...).

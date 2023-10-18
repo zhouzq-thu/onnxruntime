@@ -505,7 +505,7 @@ def call_python_forward_function(
         input_tensors_used_for_fw_run = OrderedDict()  # Orders matter here.
 
 
-        wrapped_args = list(args)
+        wrapped_args = [a for a in args]
         @nvtx_function_decorator
         def _tensor_handle(pos_and_tensor_index):
             input_position, tensor_input_index = pos_and_tensor_index

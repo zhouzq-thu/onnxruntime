@@ -242,8 +242,8 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
         """
         torch_nvtx_range_push("ORTZeROOffloadPreForwardFunction::forward")
 
-        args_tensors = tensor_list[:args_tensor_count]
-        kwargs_tensors = tensor_list[args_tensor_count : args_tensor_count + kwargs_tensor_count]
+        # args_tensors = tensor_list[:args_tensor_count]
+        # kwargs_tensors = tensor_list[args_tensor_count : args_tensor_count + kwargs_tensor_count]
 
         # For PyTorch runs, the sizes are all 0, it does not need a gradient because
         # param._detach().requires_grad_(False) is called.
@@ -256,9 +256,9 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
         ctx.dtypes = [p.dtype for p in passed_in_param_tensors]
         ctx.devices = [p.device for p in passed_in_param_tensors]
 
-        args = unflatten_data_using_schema(args_tensors, args_schema)
-        # args = unflatten_data_using_schema_and_reset_func(args_tensors, args_schema, args_data_set_func)
-        kwargs = unflatten_data_using_schema(kwargs_tensors, kwargs_schema)
+        # args = unflatten_data_using_schema(args_tensors, args_schema)
+        # # args = unflatten_data_using_schema_and_reset_func(args_tensors, args_schema, args_data_set_func)
+        # kwargs = unflatten_data_using_schema(kwargs_tensors, kwargs_schema)
         # kwargs = unflatten_data_using_schema_and_reset_func(kwargs_tensors, kwargs_schema, kwargs_data_set_func)
 
         # We will re-retrieve the parameter tensors other than use the one passed in input (of size 0 for
@@ -273,22 +273,18 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
 
         assert len(partitioned_params) == len(passed_in_param_tensors)
 
-        f_ret = pre_forward_with_kwargs_function(module, args, kwargs)
+        pre_forward_with_kwargs_function(module)
 
-        if f_ret is None:
-            updated_args, updated_kwargs = args, kwargs
-        else:
-            assert isinstance(f_ret, tuple)
-            updated_args, updated_kwargs = f_ret
+
 
         ctx.module = module
 
-        # updated_args_tensors, _, _, _ = extract_data_and_schema(updated_args)
-        updated_args_tensors = extract_data_with_access_func(updated_args, args_data_access_func)
-        # updated_kwargs_tensors, _, _, _ = extract_data_and_schema(updated_kwargs)
-        updated_kwargs_tensors = extract_data_with_access_func(updated_kwargs, kwargs_data_access_func)
+        # # updated_args_tensors, _, _, _ = extract_data_and_schema(updated_args)
+        # updated_args_tensors = extract_data_with_access_func(updated_args, args_data_access_func)
+        # # updated_kwargs_tensors, _, _, _ = extract_data_and_schema(updated_kwargs)
+        # updated_kwargs_tensors = extract_data_with_access_func(updated_kwargs, kwargs_data_access_func)
 
-        rets = tuple(updated_args_tensors + updated_kwargs_tensors)
+        rets = tuple( tensor_list[: args_tensor_count + kwargs_tensor_count])
 
         def _do(p):
             return p.detach().requires_grad_(p.requires_grad)
@@ -542,16 +538,14 @@ class ZeROOffloadSubscriber(SubscriberBase):
         kwargs_tensor_count = len(kwargs_tensors)
 
         @nvtx_function_decorator
-        def _wrap_pre_forward_module_hook(module, args, kwargs):
-            rets = _pre_forward_module_hook(module, args)
-            updated_args, updated_kwargs = args, kwargs
-            if rets is not None:
-                updated_args = rets
+        def _wrap_pre_forward_module_hook(module):
+            emtpry = []
+            _pre_forward_module_hook(module, *emtpry)
 
             # STAGE3WARN#5: Moved from _post_backward_module_hook to make sure ORT run will trigger every iteration.
             module.ds_grads_remaining = 0
 
-            return updated_args, updated_kwargs
+            # return updated_args, updated_kwargs
 
         # Need to pass the parameters as input to let the exporter trace the related weights for
         # current ORTZeROOffloadPreForwardFunction

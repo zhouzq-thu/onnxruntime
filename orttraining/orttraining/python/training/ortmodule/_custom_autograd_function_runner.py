@@ -405,6 +405,8 @@ def _finalize_training_mode_forward(
         ])
         _log_warning(f"{func_name}: Add input index to _GlobalOpKernelInfoMap, to support leaf node do inplace update.")
 
+
+    torch_nvtx_range_push(f"{func_name}.clear_grad")
     #         FORWARD                                                    BACKWARD FUNCTION CONNECTIONS
     # input_1 (leaf, constructed by from_dlpack)   <----reference----  AccumulateGrad gradient function
     #             ↓                                                                 ↑
@@ -420,9 +422,12 @@ def _finalize_training_mode_forward(
     # The next edges are stored in Node, with which we can get next gradient function.
     # https://github.com/PyTorch/PyTorch/blob/15532595209d2daf34d35e10f8d3d3b64966aea2/torch/csrc/autograd/function.h#L527
     torch_interop_utils.clear_grad_fns_for_next_edges(tensor_owning_ctx, saved_tensors)
+    torch_nvtx_range_pop()
 
     # This is mainly to hold grad_fn references by registering it into our PyNodeSharedPointerPool.
+    torch_nvtx_range_push(f"{func_name}.rg_grad_fn")
     torch_interop_utils.register_grad_fn_and_remove_from_autograd(id(ctx), tensor_owning_ctx)
+    torch_nvtx_range_pop()
 
     return ctx
 
@@ -561,10 +566,7 @@ def call_python_forward_function(
 
         # else:
         wrapped_args = args
-        wrapped_args = [
-            _tensor_handle(i, arg, requires_grad_flag)
-            for i, (arg, requires_grad_flag) in enumerate(zip(args, requires_grad_flags))
-        ]
+        wrapped_args = map(_tensor_handle, range(len(args)), args, requires_grad_flags)
         torch_nvtx_range_pop()
 
         with torch.set_grad_enabled(is_training_mode):
@@ -572,9 +574,9 @@ def call_python_forward_function(
             # TODO(pengwa): looks like we are assuming all outputs will be either Tensor or None.
             # We should revisit if it is possible to support other types of output, for example int, or, etc.
             # But that might also require some work in backend.
-            # torch_nvtx_range_push(f"{func_name}.fw")
+            torch_nvtx_range_push(f"{func_name}.fw")
             result = forward_function(*wrapped_args)
-            # torch_nvtx_range_pop()
+            torch_nvtx_range_pop()
 
             results = []
             if isinstance(result, torch.Tensor):

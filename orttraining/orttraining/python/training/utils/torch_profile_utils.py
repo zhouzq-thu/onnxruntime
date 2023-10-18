@@ -7,11 +7,13 @@ import torch
 
 
 def torch_nvtx_range_push(msg):
+    return
     if hasattr(torch.cuda.nvtx, "range_push"):
         return torch.cuda.nvtx.range_push(msg)
 
 
 def torch_nvtx_range_pop():
+    return
     if hasattr(torch.cuda.nvtx, "range_pop"):
         return torch.cuda.nvtx.range_pop()
 

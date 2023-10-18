@@ -472,8 +472,8 @@ def call_python_forward_function(
         if kernel_info.position_to_tensor_index_map is None:
             position_to_tensor_index_map = OrderedDict()
             tensor_index = 0
-            for i in tensor_type_flags:
-                if i == 1:
+            for i, flag in enumerate(tensor_type_flags):
+                if flag == 1:
                     position_to_tensor_index_map[i] = tensor_index
                     tensor_index += 1
                     continue

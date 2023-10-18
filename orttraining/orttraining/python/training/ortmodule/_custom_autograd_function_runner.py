@@ -38,6 +38,8 @@ class CustomFuncOpKernelInfo:
         # instances of a same named PythonOp/PythonOpGrad in one session, or multiple sessions.
         self.kernel_invoke_id = kernel_invoke_id
 
+        self.position_to_tensor_index_map: Optional[Dict[int, int]] = None
+
         # For the tensors generated from ORT backend, there is special handling here:
         # 1. For the first time run for the kernel (the uniqueness of the kernel is defined by kernel_invoke_id),
         # all such tensors will be cloned in case they are saved in context (but ORT backend is not aware of the
@@ -292,11 +294,11 @@ def _get_context(forward_tensor_outputs: List[torch.Tensor]) -> Tuple[any, Optio
     """
     ctx = None
     first_tensor_output = None
-    for arg in forward_tensor_outputs:
-        if not isinstance(arg, torch.Tensor) or not hasattr(arg, "grad_fn"):
-            continue
 
-        if arg.grad_fn is None:
+    def _cond(t):
+        if not isinstance(t, torch.Tensor) or not hasattr(t, "grad_fn"):
+            return False
+        if t.grad_fn is None:
             # For the following case, it is possible grad_fn exists, but its value is None,
             # so we need to continue to search for the first tensor having a non-None grad_fn.
             #
@@ -308,13 +310,14 @@ def _get_context(forward_tensor_outputs: List[torch.Tensor]) -> Tuple[any, Optio
             # >>> w, ... = CustomFunc.apply(w) # where CustomFunc forward just return w and other tensors.
             #
             # Then hasattr(w, "grad_fn") is True, but w.grad_fn is None.
-            continue
+            return False
+        return True
+
+    ts = filter(_cond, forward_tensor_outputs)
+    if ts:
+        first_tensor_output = ts[0]
         # Use the first context we see because all of arg's share the same one.
-        ctx = arg.grad_fn
-        first_tensor_output = arg
-        break
-    if first_tensor_output is not None:
-        assert ctx is not None, "ctx should not be None if first_tensor_output is not None."
+        ctx = first_tensor_output.grad_fn
     return (ctx, first_tensor_output)
 
 
@@ -466,63 +469,79 @@ def call_python_forward_function(
         tensor_input_indices_to_save_in_ctx = kernel_info.tensor_input_indices_to_save_in_ctx
         tensor_input_indices_for_mark_dirty = kernel_info.tensor_input_indices_for_mark_dirty
 
+        if kernel_info.position_to_tensor_index_map is None:
+            position_to_tensor_index_map = OrderedDict()
+            tensor_index = 0
+            for i in tensor_type_flags:
+                if i == 1:
+                    position_to_tensor_index_map[i] = tensor_index
+                    tensor_index += 1
+                    continue
+                position_to_tensor_index_map[i] = -1
+            kernel_info.position_to_tensor_index_map = position_to_tensor_index_map
+
+        position_to_tensor_index_map = kernel_info.position_to_tensor_index_map
+
         # Collect the tensor address for all inputs used for run forward, used for reuse detection.
-        tensor_input_index = 0
         # If the input is reused, we need to save the raw input tensor for special handling.
         raw_input_tensors_used_inplace = OrderedDict()  # Orders matter here.
         input_tensors_used_for_fw_run = OrderedDict()  # Orders matter here.
 
-        wrapped_args = []
-        for _, (grad_flag, tensor_flag, arg) in enumerate(zip(requires_grad_flags, tensor_type_flags, args)):
-            if tensor_flag:
-                # Assume it's a DLPack tensor and convert it to PyTorch tensor.
-                wrapped_arg = from_dlpack(arg)
+        wrapped_args = args
 
-                if tensor_input_index in inplace_map:
-                    raw_input_tensors_used_inplace[tensor_input_index] = wrapped_arg
+        def _tensor_handle(input_position, arg, grad_flag):
+            tensor_input_index = position_to_tensor_index_map[input_position]
+            if tensor_input_index == -1:
+                return arg
 
-                # Only requires gradient when running under training mode
-                # and the associated tensor has grad_flag=True (i.e.,
-                # "requires_grad=True" in the original PyTorch script).
-                wrapped_arg.requires_grad = is_training_mode and grad_flag
+            # Assume it's a DLPack tensor and convert it to PyTorch tensor.
+            wrapped_arg = from_dlpack(arg)
 
-                # Note1:
-                #   If it's first-time kernel invocation, tensor_input_indices_to_save_in_ctx is None, we do the
-                #   copy for all tensors. Otherwise, we only copy the tensors whose indices are in
-                #   tensor_input_indices_to_save_in_ctx.
-                # Note2:
-                #   For inference mode, we don't need to do the copy because ctx will be None,
-                #   so nothing will be saved for ctx.
-                # Note3:
-                # To fix this issue:
-                # "a leaf Variable that requires grad has been used in an in-place operation."
-                # If it's first-time kernel invocation, tensor_input_indices_for_mark_dirty is None, we do the
-                # copy for all tensors to generate grad for it. Otherwise, we only clone (to generate grad) for
-                # the tensors whose indices are in tensor_input_indices_for_mark_dirty.
-                if is_training_mode:
-                    if is_first_time_run:
-                        with torch.set_grad_enabled(True):
+            if tensor_input_index in inplace_map:
+                raw_input_tensors_used_inplace[tensor_input_index] = wrapped_arg
+
+            # Only requires gradient when running under training mode
+            # and the associated tensor has grad_flag=True (i.e.,
+            # "requires_grad=True" in the original PyTorch script).
+            wrapped_arg.requires_grad = is_training_mode and grad_flag
+
+            # Note1:
+            #   If it's first-time kernel invocation, tensor_input_indices_to_save_in_ctx is None, we do the
+            #   copy for all tensors. Otherwise, we only copy the tensors whose indices are in
+            #   tensor_input_indices_to_save_in_ctx.
+            # Note2:
+            #   For inference mode, we don't need to do the copy because ctx will be None,
+            #   so nothing will be saved for ctx.
+            # Note3:
+            # To fix this issue:
+            # "a leaf Variable that requires grad has been used in an in-place operation."
+            # If it's first-time kernel invocation, tensor_input_indices_for_mark_dirty is None, we do the
+            # copy for all tensors to generate grad for it. Otherwise, we only clone (to generate grad) for
+            # the tensors whose indices are in tensor_input_indices_for_mark_dirty.
+            if is_training_mode:
+                if is_first_time_run:
+                    with torch.set_grad_enabled(True):
+                        wrapped_arg = wrapped_arg.clone()
+                else:
+                    is_input_index_saved_in_ctx = (
+                        tensor_input_indices_to_save_in_ctx is None
+                        or tensor_input_index in tensor_input_indices_to_save_in_ctx
+                    )
+                    is_input_index_marked_dirty = (
+                        tensor_input_indices_for_mark_dirty is None
+                        or tensor_input_index in tensor_input_indices_for_mark_dirty
+                    )
+                    if is_input_index_saved_in_ctx or is_input_index_marked_dirty:
+                        with torch.set_grad_enabled(is_input_index_marked_dirty):
                             wrapped_arg = wrapped_arg.clone()
-                    else:
-                        is_input_index_saved_in_ctx = (
-                            tensor_input_indices_to_save_in_ctx is None
-                            or tensor_input_index in tensor_input_indices_to_save_in_ctx
-                        )
-                        is_input_index_marked_dirty = (
-                            tensor_input_indices_for_mark_dirty is None
-                            or tensor_input_index in tensor_input_indices_for_mark_dirty
-                        )
-                        if is_input_index_saved_in_ctx or is_input_index_marked_dirty:
-                            with torch.set_grad_enabled(is_input_index_marked_dirty):
-                                wrapped_arg = wrapped_arg.clone()
 
-                wrapped_args.append(wrapped_arg)
-                input_tensors_used_for_fw_run[tensor_input_index] = wrapped_arg
+            input_tensors_used_for_fw_run[tensor_input_index] = wrapped_arg
+            return wrapped_arg
 
-                tensor_input_index += 1
-            else:
-                # Use non-tensor as is. It's a PyObject*.
-                wrapped_args.append(arg)
+        wrapped_args = [
+            _tensor_handle(i, arg, requires_grad_flag)
+            for i, (arg, requires_grad_flag) in enumerate(zip(args, requires_grad_flags))
+        ]
 
         with torch.set_grad_enabled(is_training_mode):
             # Run autograd.Function.apply(...).
@@ -563,8 +582,10 @@ def call_python_forward_function(
             )
 
             dlpacks = [final_rets[0]]
+
             def _wrap_dlpack(value):
                 return to_dlpack(value) if value is not None else None
+
             dlpacks.extend(list(map(_wrap_dlpack, final_rets[1:])))
 
             # Inside the returned list, the first element is context and the rest

@@ -292,6 +292,7 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
 
         def _do(p):
             return p.detach().requires_grad_(p.requires_grad)
+
         rets += tuple(map(_do, partitioned_params))
 
         # PyTorch exporter does not support an empty list of tensors, so we have this check.

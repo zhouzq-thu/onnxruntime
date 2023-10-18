@@ -426,6 +426,17 @@ def _finalize_training_mode_forward(
 
     return ctx
 
+@functools.lru_cache(maxsize=None)
+def _check(tensor_input_indices_to_save_in_ctx, tensor_input_index, tensor_input_indices_for_mark_dirty):
+    is_input_index_saved_in_ctx = (
+        tensor_input_indices_to_save_in_ctx is None
+        or tensor_input_index in tensor_input_indices_to_save_in_ctx
+    )
+    is_input_index_marked_dirty = (
+        tensor_input_indices_for_mark_dirty is None
+        or tensor_input_index in tensor_input_indices_for_mark_dirty
+    )
+    return is_input_index_saved_in_ctx, is_input_index_marked_dirty
 
 @nvtx_function_decorator
 def call_python_forward_function(
@@ -525,18 +536,6 @@ def call_python_forward_function(
                     with torch.set_grad_enabled(True):
                         wrapped_arg = wrapped_arg.clone()
                 else:
-
-                    @functools.lru_cache(maxsize=None)
-                    def _check(tensor_input_indices_to_save_in_ctx, tensor_input_index, tensor_input_indices_for_mark_dirty):
-                        is_input_index_saved_in_ctx = (
-                            tensor_input_indices_to_save_in_ctx is None
-                            or tensor_input_index in tensor_input_indices_to_save_in_ctx
-                        )
-                        is_input_index_marked_dirty = (
-                            tensor_input_indices_for_mark_dirty is None
-                            or tensor_input_index in tensor_input_indices_for_mark_dirty
-                        )
-                        return is_input_index_saved_in_ctx, is_input_index_marked_dirty
                     is_input_index_saved_in_ctx, is_input_index_marked_dirty = _check(tensor_input_indices_to_save_in_ctx, tensor_input_index, tensor_input_indices_for_mark_dirty)
                     if is_input_index_saved_in_ctx or is_input_index_marked_dirty:
                         with torch.set_grad_enabled(is_input_index_marked_dirty):
@@ -547,18 +546,18 @@ def call_python_forward_function(
 
         torch_nvtx_range_push(f"{func_name}.pre")
         wrapped_args = []
-        if is_first_time_run:
+        if is_first_time_run and True:
             for i, (arg, requires_grad_flag, is_tensor) in enumerate(zip(args, requires_grad_flags, tensor_type_flags)):
                 if is_tensor:
                     wrapped_args.append(_tensor_handle(i, arg, requires_grad_flag))
                 else:
                     wrapped_args.append(arg)
-        else:
-            wrapped_args = args
-            wrapped_args = [
-                _tensor_handle(i, arg, requires_grad_flag)
-                for i, (arg, requires_grad_flag) in enumerate(zip(args, requires_grad_flags))
-            ]
+        # else:
+        #     wrapped_args = args
+        #     wrapped_args = [
+        #         _tensor_handle(i, arg, requires_grad_flag)
+        #         for i, (arg, requires_grad_flag) in enumerate(zip(args, requires_grad_flags))
+        #     ]
         torch_nvtx_range_pop()
 
         with torch.set_grad_enabled(is_training_mode):

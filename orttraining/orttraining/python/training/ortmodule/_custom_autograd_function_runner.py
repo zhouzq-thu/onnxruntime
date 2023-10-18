@@ -438,7 +438,9 @@ def _check(tensor_input_indices_to_save_in_ctx, tensor_input_index, tensor_input
     )
     return is_input_index_saved_in_ctx, is_input_index_marked_dirty
 
-def _tensor_handle(input_position, arg, grad_flag, position_to_tensor_index_map, raw_input_tensors_used_inplace, input_tensors_used_for_fw_run, is_training_mode, inplace_map):
+def _tensor_handle(input_position, arg, grad_flag, position_to_tensor_index_map, raw_input_tensors_used_inplace,
+                   input_tensors_used_for_fw_run, is_training_mode, inplace_map, is_first_time_run,
+                   tensor_input_indices_to_save_in_ctx, tensor_input_indices_for_mark_dirty):
     tensor_input_index = position_to_tensor_index_map[input_position]
     if tensor_input_index == -1:
         return arg
@@ -551,7 +553,12 @@ def call_python_forward_function(
         if is_first_time_run and True:
             for i, (arg, requires_grad_flag, is_tensor) in enumerate(zip(args, requires_grad_flags, tensor_type_flags)):
                 if is_tensor:
-                    wrapped_args.append(_tensor_handle(i, arg, requires_grad_flag, position_to_tensor_index_map, raw_input_tensors_used_inplace, input_tensors_used_for_fw_run, is_training_mode, inplace_map))
+                    wrapped_args.append(_tensor_handle(i, arg, requires_grad_flag, position_to_tensor_index_map,
+                                                       raw_input_tensors_used_inplace, input_tensors_used_for_fw_run,
+                                                       is_training_mode, inplace_map,
+                                                       is_first_time_run,
+                                                       tensor_input_indices_to_save_in_ctx,
+                                                       tensor_input_indices_for_mark_dirty))
                 else:
                     wrapped_args.append(arg)
         # else:

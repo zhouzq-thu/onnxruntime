@@ -7,6 +7,7 @@
 import sys
 import warnings
 from collections import OrderedDict
+import functools
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import torch

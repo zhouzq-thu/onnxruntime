@@ -505,11 +505,11 @@ def call_python_forward_function(
         input_tensors_used_for_fw_run = OrderedDict()  # Orders matter here.
 
 
-        wrapped_args = [a for a in args]
+
         @nvtx_function_decorator
-        def _tensor_handle(pos_and_tensor_index):
+        def _tensor_handle(pos_and_tensor_index, origin_args):
             input_position, tensor_input_index = pos_and_tensor_index
-            arg = wrapped_args[input_position]
+            arg = origin_args[input_position]
             grad_flag = requires_grad_flags[input_position]
 
             # Assume it's a DLPack tensor and convert it to PyTorch tensor.
@@ -548,7 +548,6 @@ def call_python_forward_function(
 
             input_tensors_used_for_fw_run[tensor_input_index] = wrapped_arg
             wrapped_args[input_position] = wrapped_arg
-            return None
 
         torch_nvtx_range_push(f"{func_name}.pre")
         # wrapped_args = []
@@ -565,7 +564,8 @@ def call_python_forward_function(
         #                                             a))
 
         # else:
-        _ = map(_tensor_handle, position_to_tensor_index_map)
+        wrapped_args = [a for a in args]
+        _ = [_tensor_handle(p, args) for p in position_to_tensor_index_map]
         torch_nvtx_range_pop()
 
         with torch.set_grad_enabled(is_training_mode):

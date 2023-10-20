@@ -591,36 +591,41 @@ def call_python_forward_function(
                     TypeError(f"ORTModule does not support the following model output type {type(result)}."),
                 )
 
-            ctx = None
-            if is_training_mode:
-                ctx = torch_interop_utils._finalize_training_mode_forward(kernel_invoke_id, func_name, results)
-                # print(ctx, type(ctx))
-                if ctx is not None:
-                    ctx.fw_kernel_invoke_id = kernel_invoke_id
-
-            final_rets = [ctx]
-            final_rets.extend(results)
-
-            # _process_inplace_outputs(
-            #     kernel_info,
-            #     func_name,
-            #     input_tensors_used_for_fw_run,
-            #     final_rets,
-            #     inplace_map,
-            #     raw_input_tensors_used_inplace,
-            # )
-
-            dlpacks = [final_rets[0]]
             torch_nvtx_range_push(f"{func_name}.post")
-            def _wrap_dlpack(value):
-                return to_dlpack(value) if value is not None else None
-
-            dlpacks.extend(list(map(_wrap_dlpack, final_rets[1:])))
+            rets = torch_interop_utils.complete_forward_runner(is_training_mode, kernel_invoke_id, func_name, results)
             torch_nvtx_range_pop()
+
+            return rets
+            # ctx = None
+            # if is_training_mode:
+            #     ctx = torch_interop_utils._finalize_training_mode_forward(kernel_invoke_id, func_name, results)
+            #     # print(ctx, type(ctx))
+            #     if ctx is not None:
+            #         ctx.fw_kernel_invoke_id = kernel_invoke_id
+
+            # final_rets = [ctx]
+            # final_rets.extend(results)
+
+            # # _process_inplace_outputs(
+            # #     kernel_info,
+            # #     func_name,
+            # #     input_tensors_used_for_fw_run,
+            # #     final_rets,
+            # #     inplace_map,
+            # #     raw_input_tensors_used_inplace,
+            # # )
+
+            # dlpacks = [final_rets[0]]
+            # torch_nvtx_range_push(f"{func_name}.post")
+            # def _wrap_dlpack(value):
+            #     return to_dlpack(value) if value is not None else None
+
+            # dlpacks.extend(list(map(_wrap_dlpack, final_rets[1:])))
+            # torch_nvtx_range_pop()
 
             # Inside the returned list, the first element is context and the rest
             # are DLPack tensors.
-        return tuple(dlpacks)
+        # return tuple(dlpacks)
     except Exception as e:
         # Flush buffers. Otherwise, calling this from C++ may lose them.
         print("Exception happens when running ", forward_function)

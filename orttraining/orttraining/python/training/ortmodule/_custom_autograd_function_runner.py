@@ -592,7 +592,7 @@ def call_python_forward_function(
                 )
 
             torch_nvtx_range_push(f"{func_name}.post")
-            rets = torch_interop_utils.complete_forward_runner(is_training_mode, kernel_invoke_id, func_name, results)
+            rets = torch_interop_utils.complete_forward_runner(is_training_mode, kernel_invoke_id, func_name, tuple(results))
             torch_nvtx_range_pop()
 
             return rets

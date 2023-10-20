@@ -380,7 +380,7 @@ py::list forward_runner(
   return py::cast(wrapped_args);
 }
 
-std::optional<at::Tensor> _get_context(py::list forward_output_tensors) {
+std::optional<at::Tensor> _get_context(py::tuple forward_output_tensors) {
   py::object ctx = py::none();
   std::optional<at::Tensor> first_tensor_output;
 
@@ -426,7 +426,7 @@ std::optional<at::Tensor> _get_context(py::list forward_output_tensors) {
 py::object _finalize_training_mode_forward(
     std::string kernel_invoke_id,
     std::string func_name,
-    py::list forward_output_tensors) {
+    py::tuple forward_output_tensors) {
   std::optional<at::Tensor> tensor_owning_ctx;
   tensor_owning_ctx = _get_context(forward_output_tensors);
   CustomFuncOpKernelInfo& kernel_info = _GlobalOpKernelInfoMap.at(kernel_invoke_id);
@@ -703,14 +703,16 @@ void DLPack_Capsule_Destructor(PyObject* data) {
 
 py::tuple complete_forward_runner(
     bool is_training_mode,
-    std::string kernel_invoke_id,
-    std::string func_name,
-    py::list forward_output_tensors) {
+    const std::string& kernel_invoke_id,
+    const std::string& func_name,
+    py::tuple forward_output_tensors) {
   py::object ctx;
   if (is_training_mode) {
     ctx = _finalize_training_mode_forward(kernel_invoke_id, func_name, forward_output_tensors);
     // if ctx is not None:
     //     ctx.fw_kernel_invoke_id = kernel_invoke_id
+  } else {
+    ctx = py::none();
   }
 
   std::vector<py::object> rets;

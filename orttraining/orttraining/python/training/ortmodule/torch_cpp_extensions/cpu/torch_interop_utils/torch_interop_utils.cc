@@ -537,7 +537,9 @@ py::object _finalize_training_mode_forward(
   // #https:  // github.com/PyTorch/PyTorch/blob/15532595209d2daf34d35e10f8d3d3b64966aea2/torch/csrc/autograd/function.h#L527
 
   std::vector<at::Tensor> saved_tensors;  // todo(pengwa)
-  clear_grad_fns_for_next_edges(tensor_owning_ctx.value(), saved_tensors);
+  if (saved_tensors.size() > 0) {
+    clear_grad_fns_for_next_edges(tensor_owning_ctx.value(), saved_tensors);
+  }
 
   // #This is mainly to hold grad_fn references by registering it into our PyNodeSharedPointerPool.
   // torch_nvtx_range_push(f "{func_name}.rg_grad_fn")
@@ -728,7 +730,7 @@ py::list complete_forward_runner(
     // if ctx is not None:
     //     ctx.fw_kernel_invoke_id = kernel_invoke_id
     if (!ctx.is_none()) {
-      ctx.fw_kernel_invoke_id = kernel_invoke_id;
+      PyObject_SetAttrString(ctx.ptr(), "fw_kernel_invoke_id", py::cast(kernel_invoke_id).ptr());
     }
   } else {
     ctx = py::none();

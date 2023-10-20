@@ -377,6 +377,9 @@ void TorchProxy::RunInputAliasFunction(
     const std::string& node_proto_str,
     std::vector<int64_t>& fw_output_to_input_alias_map,
     std::vector<int64_t>& bw_output_to_input_alias_map) {
+  // Python-related calls should happen only if guard is alive.
+  GilGuard guard;
+
   PyObject* input_alias_func = reinterpret_cast<PyObject*>(input_alias_function);
   ORT_ENFORCE(PyCallable_Check(input_alias_func), "input_alias_func is not callable.");
 

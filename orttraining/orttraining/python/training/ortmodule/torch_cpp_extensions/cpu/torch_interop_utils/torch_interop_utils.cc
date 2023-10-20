@@ -444,15 +444,31 @@ py::object _finalize_training_mode_forward(
   // #ctx being None in training mode means the forward function is not differentiable, so backward is not needed.
   if (!tensor_owning_ctx.has_value()) {
     // #If this is the first time run, collect kernel - specific information.
-    if (!kernel_info.tensor_input_indices_to_save_in_ctx.has_value()) {
-      kernel_info.tensor_input_indices_to_save_in_ctx = std::unordered_map<int, int>{};
-    }
-    if (!kernel_info.tensor_input_indices_for_mark_dirty.has_value()) {
-      kernel_info.tensor_input_indices_for_mark_dirty = std::unordered_map<int, int>{};
+    if (kernel_info.is_first_run && kernel_info.safe_run_enabled) {
+      if (!kernel_info.tensor_input_indices_to_save_in_ctx.has_value()) {
+        kernel_info.tensor_input_indices_to_save_in_ctx = std::unordered_map<int, int>{};
+      }
+      if (!kernel_info.tensor_input_indices_for_mark_dirty.has_value()) {
+        kernel_info.tensor_input_indices_for_mark_dirty = std::unordered_map<int, int>{};
+      }
     }
 
     return ret;
   }
+
+  // auto py_node_fn = dynamic_cast<torch::autograd::PyNode*>(tensor_owning_ctx.value().grad_fn().get());
+  // TORCH_CHECK(py_node_fn != nullptr, "grad_fn is not PyNode type.");
+  // THPFunction* py_fn = (THPFunction*)py_node_fn->obj;
+
+  // Py_ssize_t num_saved_for_forward =
+  //     PyTuple_GET_SIZE(py_fn->saved_for_forward);
+  // for (const auto i : c10::irange(num_saved_for_forward)) {
+  //   PyObject* obj = PyTuple_GET_ITEM(py_fn->saved_for_forward, i);
+  //   if (THPVariable_Check(obj)) {
+  //     const auto& tensor = THPVariable_Unpack(obj);
+  //     to_save_if_setup_context.insert(tensor.unsafeGetTensorImpl());
+  //   }
+  // }
 
   //  std::unordered_map<int, at::Tensor> input_tensors_used_for_fw_run,
 
@@ -701,7 +717,7 @@ void DLPack_Capsule_Destructor(PyObject* data) {
   dlMTensor->deleter(const_cast<DLManagedTensor*>(dlMTensor));
 }
 
-py::tuple complete_forward_runner(
+py::list complete_forward_runner(
     bool is_training_mode,
     const std::string& kernel_invoke_id,
     const std::string& func_name,
@@ -711,6 +727,9 @@ py::tuple complete_forward_runner(
     ctx = _finalize_training_mode_forward(kernel_invoke_id, func_name, forward_output_tensors);
     // if ctx is not None:
     //     ctx.fw_kernel_invoke_id = kernel_invoke_id
+    if (!ctx.is_none()) {
+      ctx.fw_kernel_invoke_id = kernel_invoke_id;
+    }
   } else {
     ctx = py::none();
   }
@@ -720,7 +739,6 @@ py::tuple complete_forward_runner(
   pybind11::gil_scoped_acquire gil;
   for (auto& py_obj : forward_output_tensors) {
     PyObject* obj = py_obj.ptr();
-    at::Tensor t;
 
     if (!THPVariable_Check(obj)) {
       rets.push_back(py::reinterpret_borrow<py::object>(py_obj));

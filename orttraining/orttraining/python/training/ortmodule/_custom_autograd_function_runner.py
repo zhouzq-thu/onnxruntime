@@ -595,7 +595,7 @@ def call_python_forward_function(
             rets = torch_interop_utils.complete_forward_runner(is_training_mode, kernel_invoke_id, func_name, tuple(results))
             torch_nvtx_range_pop()
 
-            return rets
+            return tuple(rets)
             # ctx = None
             # if is_training_mode:
             #     ctx = torch_interop_utils._finalize_training_mode_forward(kernel_invoke_id, func_name, results)

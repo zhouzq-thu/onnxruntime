@@ -40,7 +40,7 @@ class PyNodeSharedPointerPool {
   static PyNodeSharedPointerPool& GetInstance() {
     static PyNodeSharedPointerPool pool;
     return pool;
-  };
+  }
 
   void RegisterGradFuncAndRemoveFromAutoGrad(const size_t& ctx_address,
                                              torch::autograd::AutogradMeta* autograd_meta) {
@@ -52,14 +52,14 @@ class PyNodeSharedPointerPool {
     grad_fns_.emplace(ctx_address, std::move(autograd_meta->grad_fn_));
     TORCH_CHECK(autograd_meta->grad_fn_ == nullptr, "fail to remove grad_fn_ from torch autograd for ctx ",
                 ctx_address);
-  };
+  }
 
   void UnRegisterGradFunc(const size_t& ctx_address) {
     auto it = grad_fns_.find(ctx_address);
     TORCH_CHECK(it != grad_fns_.end(), "fail to find grad_fn for ctx ", ctx_address);
 
     grad_fns_.erase(ctx_address);
-  };
+  }
 
   void ClearAll() {
     grad_fns_.clear();
@@ -253,8 +253,8 @@ class CustomFuncOpKernelInfo {
   std::string kernel_invoke_id;
   std::unordered_map<int, int> input_global_index_to_tensor_index_map;
   std::optional<std::unordered_map<int, int>> tensor_input_indices_to_save_in_ctx;
-  bool materialize_grads;
-  // std::unordered_map<int, std::tuple<c10::Device, c10::ScalarType, torch::Shape>> materialize_grads_config;
+  bool materialize_grads{true};
+  std::unordered_map<size_t, std::tuple<std::vector<int64_t>, c10::TensorOptions>> materialize_grads_config;
 
   std::optional<std::unordered_map<int, int>> tensor_input_indices_for_mark_dirty;
   std::vector<int> output_indices_for_clone;
@@ -265,7 +265,6 @@ class CustomFuncOpKernelInfo {
 std::unordered_map<std::string, CustomFuncOpKernelInfo> _GlobalOpKernelInfoMap;
 
 py::list forward_runner(
-    // std::function forward_function,
     const std::vector<bool>& requires_grad_flags,
     const std::vector<int>& tensor_type_flags,
     bool is_training_mode,
@@ -275,7 +274,6 @@ py::list forward_runner(
     py::tuple args) {
   py::gil_scoped_release release;
 
-  // auto t0 = std::chrono::high_resolution_clock::now();
   auto it = _GlobalOpKernelInfoMap.find(kernel_invoke_id);
   if (it == _GlobalOpKernelInfoMap.end()) {
     bool safe_run = false;
@@ -283,16 +281,14 @@ py::list forward_runner(
   }
 
   CustomFuncOpKernelInfo& kernel_info = _GlobalOpKernelInfoMap.at(kernel_invoke_id);
+
   // std::unordered_map<int, at::Tensor> raw_input_tensors_used_inplace;
   // std::unordered_map<int, at::Tensor> input_tensors_used_for_fw_run;
+
   int tensor_input_index = 0;
-  std::vector<std::variant<py::object, at::Tensor>> wrapped_args;
+  std::vector<py::object> wrapped_args;
   wrapped_args.reserve(args.size());
-  {
-    // auto t1 = std::chrono::high_resolution_clock::now();
-    // std::chrono::duration<float> fs = t1 - t0;
-    // std::cout << "ckpt 1 latency(ms): " << fs.count() * 1000 << ", kernel_info.is_first_run: " << kernel_info.is_first_run << std::endl;
-  }
+
   for (size_t arg_index = 0; arg_index < args.size(); ++arg_index) {
     bool is_tensor = tensor_type_flags[arg_index] == 1;
     bool requires_grad = requires_grad_flags[arg_index] && is_training_mode;
@@ -303,28 +299,26 @@ py::list forward_runner(
 
     at::Tensor tensor;
     {
-      // auto t0 = std::chrono::high_resolution_clock::now();
       pybind11::gil_scoped_acquire gil;
       // Assume it's a DLPack tensor and convert it to PyTorch tensor.
       TORCH_CHECK(PyCapsule_IsValid(args[arg_index].ptr(), "dltensor") != 0, "found invalid pycapsule");
       tensor = torch::utils::tensor_fromDLPack(args[arg_index].ptr());
-      // auto t1 = std::chrono::high_resolution_clock::now();
-      // std::chrono::duration<float> fs = t1 - t0;
-      // std::cout << "dlpack latency(ms): " << fs.count() * 1000 << ", kernel_info.is_first_run: " << kernel_info.is_first_run << std::endl;
     }
-
-    // bool is_input_used_inplace = std::find(inplace_map.begin(), inplace_map.end(), tensor_input_index) != inplace_map.end();
-    // if (is_input_used_inplace) {
-    //   // raw_input_tensors_used_inplace[tensor_input_index] = tensor;
-    // }
 
     tensor.requires_grad_(requires_grad);
 
     if (is_training_mode && kernel_info.safe_run_enabled) {
+      // bool is_input_used_inplace = std::find(inplace_map.begin(), inplace_map.end(), tensor_input_index) != inplace_map.end();
+      // if (is_input_used_inplace) {
+      //   raw_input_tensors_used_inplace[tensor_input_index] = tensor;
+      // }
+
       if (kernel_info.is_first_run) {
         at::AutoGradMode enable_grad(true);
         auto wrapped_arg = tensor.clone();
-        wrapped_args.push_back(wrapped_arg);
+        wrapped_args.push_back(py::reinterpret_steal<py::object>(THPVariable_Wrap(wrapped_arg)));
+
+        // input_tensors_used_for_fw_run[tensor_input_index] = tensor;
       } else {
         bool is_input_index_saved_in_ctx = kernel_info.tensor_input_indices_to_save_in_ctx.value().find(tensor_input_index) !=
                                            kernel_info.tensor_input_indices_to_save_in_ctx.value().end();
@@ -349,34 +343,22 @@ py::list forward_runner(
           // input_tensors_used_for_fw_run[tensor_input_index] = wrapped_arg
           // wrapped_args[input_position] = wrapped_arg
           wrapped_arg.requires_grad_(requires_grad);
-          wrapped_args.push_back(wrapped_arg);
+          wrapped_args.push_back(py::reinterpret_steal<py::object>(THPVariable_Wrap(wrapped_arg)));
+
+          // input_tensors_used_for_fw_run[tensor_input_index] = wrapped_arg;
         } else {
-          wrapped_args.push_back(tensor);
+          wrapped_args.push_back(py::reinterpret_steal<py::object>(THPVariable_Wrap(tensor)));
+          // input_tensors_used_for_fw_run[tensor_input_index] = tensor;
         }
       }
     } else {
-      wrapped_args.push_back(tensor);
+      wrapped_args.push_back(py::reinterpret_steal<py::object>(THPVariable_Wrap(tensor)));
     }
 
     // input_tensors_used_for_fw_run[tensor_input_index] = wrapped_args.back();
-    tensor_input_index++;
-    {
-      // auto t1 = std::chrono::high_resolution_clock::now();
-      // std::chrono::duration<float> fs = t1 - t0;
-      // // std::chrono::milliseconds d = std::chrono::duration_cast<ms>(fs);
-      // std::cout << "ckpt 2 latency(ms): " << fs.count() * 1000 << ", kernel_info.is_first_run: " << kernel_info.is_first_run << std::endl;
-    }
-  }
-  {
-    // auto t1 = std::chrono::high_resolution_clock::now();
-    // std::chrono::duration<float> fs = t1 - t0;
-    // // std::chrono::milliseconds d = std::chrono::duration_cast<ms>(fs);
-    // std::cout << "runner e2e latency(ms): " << fs.count() * 1000 << ", kernel_info.is_first_run: " << kernel_info.is_first_run << std::endl;
+    // tensor_input_index++;
   }
 
-  if (kernel_info.is_first_run) {
-    kernel_info.is_first_run = false;
-  }
   return py::cast(wrapped_args);
 }
 
@@ -437,11 +419,11 @@ py::object _finalize_training_mode_forward(
     if (tensor_owning_ctx.has_value()) {
       ret = py::reinterpret_steal<py::object>(torch::autograd::functionToPyObject(tensor_owning_ctx.value().grad_fn()));
     } else {
+      // ctx being None in training mode means the forward function is not differentiable, so backward is not needed.
       ret = py::none();
     }
   }
 
-  // #ctx being None in training mode means the forward function is not differentiable, so backward is not needed.
   if (!tensor_owning_ctx.has_value()) {
     // #If this is the first time run, collect kernel - specific information.
     if (kernel_info.is_first_run && kernel_info.safe_run_enabled) {
@@ -454,6 +436,46 @@ py::object _finalize_training_mode_forward(
     }
 
     return ret;
+  }
+
+  if (kernel_info.is_first_run) {
+    py::gil_scoped_release release;
+    torch::autograd::AutogradMeta* autograd_meta = torch::autograd::impl::get_autograd_meta(tensor_owning_ctx.value());
+    const auto& grad_fn = autograd_meta->grad_fn_;
+    auto py_node_fn = dynamic_cast<torch::autograd::PyNode*>(grad_fn.get());
+    TORCH_CHECK(py_node_fn != nullptr, "grad_fn is not PyNode type.");
+    THPFunction* py_fn = (THPFunction*)py_node_fn->obj;
+    kernel_info.materialize_grads = py_fn->materialize_grads;
+
+    // kernel_info.materialize_grads = get_materialize_grads(tensor_owning_ctx.value());
+    if (kernel_info.materialize_grads) {
+      for (size_t i = 0; i < forward_output_tensors.size(); ++i) {
+        PyObject* obj = forward_output_tensors[i].ptr();
+        if (!THPVariable_Check(obj)) {
+          continue;
+        }
+        at::Tensor t = THPVariable_Unpack(obj);
+        kernel_info.materialize_grads_config.insert({i, {t.sizes().vec(), t.options()}});
+      }
+    }
+
+    // Py_ssize_t num_saved_for_forward =
+    //     PyTuple_GET_SIZE(py_fn->saved_for_forward);
+    // std::vector<at::Tensor> saved_tensors;
+    // saved_tensors.reserve(num_saved_for_forward);
+    // for (const auto i : c10::irange(num_saved_for_forward)) {
+    //   PyObject* obj = PyTuple_GET_ITEM(py_fn->saved_for_forward, i);
+    //   if (THPVariable_Check(obj)) {
+    //     const auto& tensor = THPVariable_Unpack(obj);
+    //     saved_tensors.push_back(tensor);
+    //   }
+    // }
+
+    //         kernel_info.tensor_input_indices_to_save_in_ctx = tuple([
+    //             tensor_input_index
+    //             for tensor_input_index, tensor in input_tensors_used_for_fw_run.items()
+    //             if any(tensor is saved_tensor for saved_tensor in saved_tensors)
+    //         ])
   }
 
   // auto py_node_fn = dynamic_cast<torch::autograd::PyNode*>(tensor_owning_ctx.value().grad_fn().get());
@@ -727,8 +749,6 @@ py::list complete_forward_runner(
   py::object ctx;
   if (is_training_mode) {
     ctx = _finalize_training_mode_forward(kernel_invoke_id, func_name, forward_output_tensors);
-    // if ctx is not None:
-    //     ctx.fw_kernel_invoke_id = kernel_invoke_id
     if (!ctx.is_none()) {
       PyObject_SetAttrString(ctx.ptr(), "fw_kernel_invoke_id", py::cast(kernel_invoke_id).ptr());
     }
@@ -767,9 +787,126 @@ py::list complete_forward_runner(
 
   // dlpacks.extend(list(map(_wrap_dlpack, final_rets[1:])))
   // torch_nvtx_range_pop()
+  CustomFuncOpKernelInfo& kernel_info = _GlobalOpKernelInfoMap.at(kernel_invoke_id);
 
+  if (kernel_info.is_first_run) {
+    kernel_info.is_first_run = false;
+  }
   return py::cast(rets);
 }
+
+py::list backward_runner(
+    // std::function forward_function,
+    const std::vector<bool>& requires_grad_flags,
+    const std::vector<int>& tensor_type_flags,
+    bool is_training_mode,
+    const std::vector<int>& inplace_map,
+    const std::string& kernel_invoke_id,
+    const std::string& func_name,
+    py::tuple args) {
+  py::gil_scoped_release release;
+  at::AutoGradMode enable_grad(false);
+
+  // auto t0 = std::chrono::high_resolution_clock::now();
+  auto it = _GlobalOpKernelInfoMap.find(kernel_invoke_id);
+  if (it == _GlobalOpKernelInfoMap.end()) {
+    bool safe_run = false;
+    _GlobalOpKernelInfoMap.emplace(kernel_invoke_id, CustomFuncOpKernelInfo(kernel_invoke_id, safe_run));
+  }
+
+  CustomFuncOpKernelInfo& kernel_info = _GlobalOpKernelInfoMap.at(kernel_invoke_id);
+
+  // std::unordered_map<int, at::Tensor> raw_input_tensors_used_inplace;
+  // std::unordered_map<int, at::Tensor> input_tensors_used_for_fw_run;
+
+  // int tensor_input_index = 0;
+  std::vector<py::object> wrapped_args;
+  wrapped_args.reserve(args.size());
+  py::object ctx = args[0];
+  pybind11::gil_scoped_acquire gil;
+  wrapped_args.push_back(ctx);
+  for (size_t arg_index = 1; arg_index < args.size(); ++arg_index) {
+    if (tensor_type_flags[arg_index] != 1) {
+      wrapped_args.push_back(args[arg_index]);
+      continue;
+    }
+
+    at::Tensor tensor;
+    // Assume it's a DLPack tensor and convert it to PyTorch tensor.
+    bool is_dlpack = PyCapsule_IsValid(args[arg_index].ptr(), "dltensor") != 0;
+    if (is_dlpack) {
+      tensor = torch::utils::tensor_fromDLPack(args[arg_index].ptr());
+    } else {
+      TORCH_CHECK(args[arg_index].is_none(), "Only None is supported for non-tensor input.");
+      PyObject* fw_kernel_invoke_id = PyObject_GetAttrString(ctx.ptr(), "fw_kernel_invoke_id");
+      std::string fw_kernel_invoke_id_str = py::cast<std::string>(py::reinterpret_borrow<py::object>(fw_kernel_invoke_id));
+      CustomFuncOpKernelInfo& fw_kernel_info = _GlobalOpKernelInfoMap.at(fw_kernel_invoke_id_str);
+      if (fw_kernel_info.materialize_grads) {
+        auto& config = fw_kernel_info.materialize_grads_config.at(arg_index - 1);
+        tensor = at::zeros(std::get<0>(config), std::get<1>(config));  // shift by 1 to skip context input.
+      }
+    }
+
+    if (kernel_info.safe_run_enabled) {
+      // bool is_input_used_inplace = std::find(inplace_map.begin(), inplace_map.end(), tensor_input_index) != inplace_map.end();
+      // if (is_input_used_inplace) {
+      //   raw_input_tensors_used_inplace[tensor_input_index] = tensor;
+      // }
+
+      // if (kernel_info.is_first_run) {
+      //   at::AutoGradMode enable_grad(true);
+      //   auto wrapped_arg = tensor.clone();
+      //   wrapped_args.push_back(py::reinterpret_steal<py::object>(THPVariable_Wrap(wrapped_arg)));
+      // } else {
+      //   bool is_input_index_saved_in_ctx = kernel_info.tensor_input_indices_to_save_in_ctx.value().find(tensor_input_index) !=
+      //                                      kernel_info.tensor_input_indices_to_save_in_ctx.value().end();
+      //   // std::find(kernel_info.tensor_input_indices_to_save_in_ctx.value().begin(),
+      //   //                                              kernel_info.tensor_input_indices_to_save_in_ctx.value().end(),
+      //   //                                              tensor_input_index) !=
+      //   //                                    kernel_info.tensor_input_indices_to_save_in_ctx.value().end();
+
+      //   bool is_input_index_marked_dirty = kernel_info.tensor_input_indices_for_mark_dirty.value().find(tensor_input_index) !=
+      //                                      kernel_info.tensor_input_indices_for_mark_dirty.value().end();
+      //   // std::find(kernel_info.tensor_input_indices_for_mark_dirty.value().begin(),
+      //   //                                              kernel_info.tensor_input_indices_for_mark_dirty.value().end(),
+      //   //                                              tensor_input_index) !=
+      //   //                                    kernel_info.tensor_input_indices_for_mark_dirty.value().end();
+
+      //   if (is_input_index_saved_in_ctx || is_input_index_marked_dirty) {
+      //     at::AutoGradMode enable_grad(is_input_index_marked_dirty);
+      //     auto wrapped_arg = tensor.clone();
+      //     // with torch.set_grad_enabled(is_input_index_marked_dirty):
+      //     //     wrapped_arg = wrapped_arg.clone()
+
+      //     // input_tensors_used_for_fw_run[tensor_input_index] = wrapped_arg
+      //     // wrapped_args[input_position] = wrapped_arg
+      //     wrapped_arg.requires_grad_(requires_grad);
+      //     wrapped_args.push_back(py::reinterpret_steal<py::object>(THPVariable_Wrap(wrapped_arg)));
+      //   } else {
+      //     wrapped_args.push_back(py::reinterpret_steal<py::object>(THPVariable_Wrap(tensor)));
+      //   }
+      // }
+      // input_tensors_used_for_fw_run[tensor_input_index] = tensor;
+
+    } else {
+      if (tensor.defined()) {
+        wrapped_args.push_back(py::reinterpret_steal<py::object>(THPVariable_Wrap(tensor)));
+      } else {
+        wrapped_args.push_back(py::none());
+      }
+    }
+
+    // input_tensors_used_for_fw_run[tensor_input_index] = wrapped_args.back();
+    // tensor_input_index++;
+  }
+
+  if (kernel_info.is_first_run) {
+    kernel_info.is_first_run = false;
+  }
+  return py::cast(wrapped_args);
+}
+
+size_t get_custom_function_forward_runner() { return reinterpret_cast<size_t>(&forward_runner); }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("register_grad_fn_and_remove_from_autograd", &register_grad_fn_and_remove_from_autograd,
@@ -783,4 +920,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("forward_runner", &forward_runner, "Forward runner.");
   m.def("_finalize_training_mode_forward", &_finalize_training_mode_forward, "Finalize training mode forward.");
   m.def("complete_forward_runner", &complete_forward_runner, "Complete forward runner.");
+  m.def("backward_runner", &backward_runner, "Backward runner.");
+  m.def("get_custom_function_forward_runner", &get_custom_function_forward_runner, "Get custom function forward runner.");
 }

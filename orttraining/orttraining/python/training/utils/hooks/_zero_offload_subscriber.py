@@ -284,13 +284,13 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
         # # updated_kwargs_tensors, _, _, _ = extract_data_and_schema(updated_kwargs)
         # updated_kwargs_tensors = extract_data_with_access_func(updated_kwargs, kwargs_data_access_func)
 
-        rets = tuple( tensor_list[: args_tensor_count + kwargs_tensor_count])
+        rets = tuple(tensor_list[: args_tensor_count + kwargs_tensor_count])
 
-        def _do(p):
-            return p.detach().requires_grad_(p.requires_grad)
+        # def _do(p):
+        #     return p.detach().requires_grad_(p.requires_grad)
 
-        rets += tuple(map(_do, partitioned_params))
-
+        # rets += tuple(map(_do, partitioned_params))
+        rets += tuple([p.detach().requires_grad_(p.requires_grad) for p in partitioned_params])
         # PyTorch exporter does not support an empty list of tensors, so we have this check.
         assert len(rets) != 0
 
@@ -425,9 +425,9 @@ class ORTZeROOffloadPostForwardFunction(torch.autograd.Function):
 
         ctx.module = module
         ctx.pre_backward_function = pre_backward_function
-
+        rets = [o.detach().requires_grad_(o.requires_grad) for o in updated_output_tensors]
         torch_nvtx_range_pop()
-        return tuple(updated_output_tensors)
+        return tuple(rets)
 
     @staticmethod
     def backward(ctx, *grads):

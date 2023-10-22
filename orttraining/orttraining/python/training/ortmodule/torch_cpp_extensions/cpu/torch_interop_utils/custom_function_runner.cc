@@ -23,6 +23,45 @@ void register_grad_fn_and_remove_from_autograd(size_t ctx_address, at::Tensor ta
   PyNodeSharedPointerPool::GetInstance().RegisterGradFuncAndRemoveFromAutoGrad(ctx_address, autograd_meta);
 }
 
+void clear_grad_fns_for_next_edges(at::Tensor& target, std::vector<at::Tensor>& saved_tensors) {
+  // For leaf tensor, there will be a AccumulateGrad (gradient function) created, which owns a
+  // reference to the tensor.
+  // For any user saved tensors (with save_for_backward), if the tensor is leaf, we put the map
+  // {AccumulateGrad*, Tensor*} into grad_fn_to_tensor_map.
+  std::unordered_map<torch::autograd::Node*, at::Tensor*> grad_fn_to_tensor_map;
+  for (auto& t : saved_tensors) {
+    auto grad_fn = t.grad_fn();
+    if (!grad_fn) {
+      grad_fn = torch::autograd::impl::try_get_grad_accumulator(t);
+      if (grad_fn) {
+        TORCH_CHECK(grad_fn_to_tensor_map.find(grad_fn.get()) == grad_fn_to_tensor_map.end(),
+                    "found AccumulateGrad* is used by more than one tensors.");
+        grad_fn_to_tensor_map.insert({grad_fn.get(), &t});
+      }
+    }
+  }
+
+  const auto& gradient_func_sptr = target.grad_fn();
+  for (auto& edge : gradient_func_sptr->next_edges()) {
+    torch::autograd::Node* node_func = edge.function.get();
+    // If we find the next gradient function is AccumulateGrad, we will check whether its owned
+    // tensors is in ctx.save_tensors or not. If yes, we skip it; otherwise, we clean the edge, which
+    // will release the AccumulateGrad function.
+    if (dynamic_cast<torch::autograd::AccumulateGrad*>(node_func)) {
+      if (grad_fn_to_tensor_map.find(node_func) != grad_fn_to_tensor_map.end()) {
+        // skip the edges that connect to saved_tensors. Because when unpack ctx.saved_tensors using
+        // following code in backward:
+        //     input, = ctx.saved_tensors
+        // there is such a check: if the saved tensor is a leaf and requires grad, it should have grad accumulator.
+        // If we clean the edge, then an exception "RuntimeError: No grad accumulator for a saved leaf!" will be thrown
+        continue;
+      } else {
+        edge.function.reset();
+      }
+    }
+  }
+}
+
 void unregister_grad_fn(py::object ctx) {
   // py::gil_scoped_release release;
   uint32_t y = reinterpret_cast<uintptr_t>(ctx.ptr());
@@ -275,9 +314,7 @@ py::object _finalize_training_mode_forward(
   // #https:  // github.com/PyTorch/PyTorch/blob/15532595209d2daf34d35e10f8d3d3b64966aea2/torch/csrc/autograd/function.h#L527
 
   std::vector<at::Tensor> saved_tensors;  // todo(pengwa)
-  if (saved_tensors.size() > 0) {
-    clear_grad_fns_for_next_edges(tensor_owning_ctx.value(), saved_tensors);
-  }
+  clear_grad_fns_for_next_edges(tensor_owning_ctx.value(), saved_tensors);
 
   // #This is mainly to hold grad_fn references by registering it into our PyNodeSharedPointerPool.
   // torch_nvtx_range_push(f "{func_name}.rg_grad_fn")
@@ -570,19 +607,10 @@ std::vector<PyObject*> custom_function_forward_runner(const char* func_name_char
 
     // std::cout << "custom_function_forward_runner>>> before call raii_call_args.size():" << raii_call_args.size() << std::endl;
 
-    for (size_t i = 0; i < raii_call_args.size(); ++i) {
-      // std::cout << "custom_function_forward_runner>>> raii_call_args[" << i << "]: " << Py_REFCNT(raii_call_args[i].ptr()) << std::endl;
-    }
-    py::tuple call_args;
-    if (raii_call_args.size() > 1) {
-      call_args = py::cast(raii_call_args);
-    } else {
-      call_args = py::make_tuple(raii_call_args[0]);
-    }
+    py::tuple call_args = py::cast(raii_call_args);
 
     // std::cout << "custom_function_forward_runner>>> before forward run" << std::endl;
     PyObject* result_pyobj;
-
     {
       at::AutoGradMode enable_grad(is_training_mode);
       result_pyobj = PyObject_CallObject(reinterpret_cast<PyObject*>(callback), call_args.ptr());

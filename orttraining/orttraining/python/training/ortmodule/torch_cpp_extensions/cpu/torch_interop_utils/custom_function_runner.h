@@ -14,7 +14,7 @@
 #include <chrono>
 #include <iostream>
 
-void clear_grad_fns_for_next_edges(at::Tensor target,
+void clear_grad_fns_for_next_edges(at::Tensor& target,
                                    std::vector<at::Tensor>& saved_tensors);
 
 void register_grad_fn_and_remove_from_autograd(size_t ctx_address, at::Tensor target);

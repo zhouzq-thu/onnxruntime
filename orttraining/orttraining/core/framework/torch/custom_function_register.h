@@ -13,6 +13,15 @@ namespace onnxruntime {
 namespace language_interop_ops {
 namespace torch {
 
+typedef std::vector<PyObject*> (*CustomFunctionRunnerType)(const char* func_name_char,
+                                                           void* callback,
+                                                           const std::vector<int64_t>& requires_grads,
+                                                           const std::vector<int64_t>& tensor_type_flags,
+                                                           const bool is_training_mode,
+                                                           const std::vector<int64_t>& inplace_map,
+                                                           const char* kernel_invoke_id_char,
+                                                           const std::vector<PyObject*>& tensor_args);
+
 class OrtTorchFunctionPool final {
  public:
   static OrtTorchFunctionPool& GetInstance() {
@@ -67,15 +76,15 @@ class OrtTorchFunctionPool final {
   // ForwardRunner/BackwardRunner are "glue" codes written in Python that interacting
   // with C++ kernels during Python function invoking.
   // This function creates new ownership to "obj".
-  void RegisterForwardRunner(PyObject* obj);
+  void RegisterForwardRunner(size_t function_address);
   // This function creates new ownership to "obj".
-  void RegisterBackwardRunner(PyObject* obj);
-  // Return a borrowed reference to a Python function, which
+  void RegisterBackwardRunner(size_t function_address);
+  // Return a borrowed reference to a c++ function, which
   // is responsible for executing autograd.Function.apply.
-  PyObject* GetForwardRunner();
-  // Return a borrowed reference to a Python function, which
+  CustomFunctionRunnerType GetForwardRunner();
+  // Return a borrowed reference to a c++ function, which
   // is responsible for executing autograd.Function.apply.
-  PyObject* GetBackwardRunner();
+  CustomFunctionRunnerType GetBackwardRunner();
 
   // The reason we provide this unregister api is:
   //   A static OrtTorchFunctionPool instance will be destructed after
@@ -97,8 +106,8 @@ class OrtTorchFunctionPool final {
   void UnRegisterGlobalFunctions();
   void UnRegisterModelSpecificFunctions();
 
-  PythonObjectPtr forward_runner_;
-  PythonObjectPtr backward_runner_;
+  CustomFunctionRunnerType forward_runner_;
+  CustomFunctionRunnerType backward_runner_;
 
   std::unordered_map<std::string, PythonObjectPtr> forward_core_pool_;
   std::unordered_map<std::string, PythonObjectPtr> backward_core_pool_;

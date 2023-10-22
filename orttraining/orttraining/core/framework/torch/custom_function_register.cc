@@ -105,46 +105,25 @@ void OrtTorchFunctionPool::RegisterInputAliasFunction(const std::string& key,
   RegisterEntry(mutex_, key, obj, input_alias_function_pool_);
 }
 
-static void RegisterEntry(
-    std::mutex& mutex,
-    PyObject* obj,
-    PythonObjectPtr& storage) {
-  std::lock_guard<std::mutex> lock(mutex);
-  // Basic checks.
-  ORT_ENFORCE(obj, "Cannot register NULL PyObject*.");
-
-  // Skip registration if storage already stores a Python object.
-  if (storage.get() != nullptr) {
-    return;
-  }
-
-  // Own the Python object.
-  Py_INCREF(obj);
-  PythonObjectPtr ptr(obj, PythonObjectDeleter);
-
-  // If an obj has been registered, this old ownership is automatically released
-  // after this move-assignment. Then, the "storage" owns the new object.
-  storage = std::move(ptr);
+void OrtTorchFunctionPool::RegisterForwardRunner(size_t function_address) {
+  void* p_forward_runner_func = reinterpret_cast<void*>(function_address);
+  forward_runner_ = reinterpret_cast<CustomFunctionRunnerType>(p_forward_runner_func);
 }
 
-void OrtTorchFunctionPool::RegisterForwardRunner(PyObject* obj) {
-  RegisterEntry(mutex_, obj, forward_runner_);
+void OrtTorchFunctionPool::RegisterBackwardRunner(size_t function_address) {
+  void* p_backward_runner_func = reinterpret_cast<void*>(function_address);
+  backward_runner_ = reinterpret_cast<CustomFunctionRunnerType>(p_backward_runner_func);
 }
 
-void OrtTorchFunctionPool::RegisterBackwardRunner(PyObject* obj) {
-  RegisterEntry(mutex_, obj, backward_runner_);
+CustomFunctionRunnerType OrtTorchFunctionPool::GetForwardRunner() {
+  ORT_ENFORCE(forward_runner_, "Forward runner cannot be NULL. Do you forget register it by calling RegisterForwardRunner(...)?");
+
+  return forward_runner_;
 }
 
-PyObject* OrtTorchFunctionPool::GetForwardRunner() {
-  std::lock_guard<std::mutex> lock(mutex_);
-  ORT_ENFORCE(forward_runner_.get(), "Forward runner cannot be NULL. Do you forget register it by calling RegisterForwardRunner(...)?");
-  return forward_runner_.get();
-}
-
-PyObject* OrtTorchFunctionPool::GetBackwardRunner() {
-  std::lock_guard<std::mutex> lock(mutex_);
-  ORT_ENFORCE(backward_runner_.get(), "backward runner cannot be NULL. Do you forget register it by calling RegisterBackwardRunner(...)?");
-  return backward_runner_.get();
+CustomFunctionRunnerType OrtTorchFunctionPool::GetBackwardRunner() {
+  ORT_ENFORCE(backward_runner_, "backward runner cannot be NULL. Do you forget register it by calling RegisterBackwardRunner(...)?");
+  return backward_runner_;
 }
 
 PyObject* OrtTorchFunctionPool::GetForwardCore(const std::string& key) {
@@ -227,8 +206,6 @@ PyObject* OrtTorchFunctionPool::GetContext(int64_t context_index) {
 }
 
 void OrtTorchFunctionPool::UnRegisterGlobalFunctions() {
-  forward_runner_.reset();
-  backward_runner_.reset();
   func_context_pool_.clear();
 }
 

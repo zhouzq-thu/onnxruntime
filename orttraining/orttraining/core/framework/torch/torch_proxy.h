@@ -62,7 +62,7 @@ class TorchProxy {
       const std::vector<int64_t>& obj_indices,
       const std::vector<int64_t>& inplace_map,
       const std::string& invoke_id,
-      std::vector<OrtValue>& return_args);
+      std::vector<OrtValue>& returned_ortvalues);
 
   /**
    * @brief Run given function to get output to input reuse map.

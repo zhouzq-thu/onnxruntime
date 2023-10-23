@@ -168,13 +168,27 @@ py::object _finalize_training_mode_forward(
 
   py::object ret = py::reinterpret_steal<py::object>(torch::autograd::functionToPyObject(tensor_owning_ctx.value().grad_fn()));
 
+  torch::autograd::AutogradMeta* autograd_meta = torch::autograd::impl::get_autograd_meta(tensor_owning_ctx.value());
+  const auto& grad_fn = autograd_meta->grad_fn_;
+  auto py_node_fn = dynamic_cast<torch::autograd::PyNode*>(grad_fn.get());
+  TORCH_CHECK(py_node_fn != nullptr, "grad_fn is not PyNode type.");
+  THPFunction* py_fn = (THPFunction*)py_node_fn->obj;
+
+  Py_ssize_t num_saved_for_forward =
+      PyTuple_GET_SIZE(py_fn->saved_for_forward);
+  std::vector<at::Tensor> saved_tensors;
+  saved_tensors.reserve(num_saved_for_forward);
+  for (const auto i : c10::irange(num_saved_for_forward)) {
+    PyObject* obj = PyTuple_GET_ITEM(py_fn->saved_for_forward, i);
+    if (THPVariable_Check(obj)) {
+      const auto& tensor = THPVariable_Unpack(obj);
+      saved_tensors.push_back(tensor);
+    }
+  }
+
   if (kernel_info.is_first_run) {
     // py::gil_scoped_release release;
-    torch::autograd::AutogradMeta* autograd_meta = torch::autograd::impl::get_autograd_meta(tensor_owning_ctx.value());
-    const auto& grad_fn = autograd_meta->grad_fn_;
-    auto py_node_fn = dynamic_cast<torch::autograd::PyNode*>(grad_fn.get());
-    TORCH_CHECK(py_node_fn != nullptr, "grad_fn is not PyNode type.");
-    THPFunction* py_fn = (THPFunction*)py_node_fn->obj;
+
     kernel_info.materialize_grads = py_fn->materialize_grads;
 
     // kernel_info.materialize_grads = get_materialize_grads(tensor_owning_ctx.value());
@@ -189,21 +203,15 @@ py::object _finalize_training_mode_forward(
       }
     }
 
-    Py_ssize_t num_saved_for_forward =
-        PyTuple_GET_SIZE(py_fn->saved_for_forward);
-    std::vector<at::Tensor> saved_tensors;
-    saved_tensors.reserve(num_saved_for_forward);
-    for (const auto i : c10::irange(num_saved_for_forward)) {
-      PyObject* obj = PyTuple_GET_ITEM(py_fn->saved_for_forward, i);
-      if (THPVariable_Check(obj)) {
-        const auto& tensor = THPVariable_Unpack(obj);
-        saved_tensors.push_back(tensor);
-      }
-    }
-
     for (auto& pair : input_tensors_used_for_fw_run) {
       auto& tensor = pair.second;
-      bool found = std::find(saved_tensors.begin(), saved_tensors.end(), tensor) != saved_tensors.end();
+      bool found = false;
+      for (auto& t : saved_tensors) {
+        if (t.is_same(tensor)) {
+          found = true;
+          break;
+        }
+      }
       kernel_info.tensor_input_indices_to_save_in_ctx[pair.first] = found;
     }
 
@@ -238,7 +246,6 @@ py::object _finalize_training_mode_forward(
   // #The next edges are stored in Node, with which we can get next gradient function.
   // #https:  // github.com/PyTorch/PyTorch/blob/15532595209d2daf34d35e10f8d3d3b64966aea2/torch/csrc/autograd/function.h#L527
 
-  std::vector<at::Tensor> saved_tensors;  // todo(pengwa)
   clear_grad_fns_for_next_edges(tensor_owning_ctx.value(), saved_tensors);
 
   // This is mainly to hold grad_fn references by registering it into our PyNodeSharedPointerPool.
@@ -252,8 +259,8 @@ void detect_memory_reuse_once(
     const std::string& kernel_invoke_id,
     const std::string& func_name,
     const std::unordered_map<int, at::Tensor>& input_tensors_used_for_fw_run,
-    const std::vector<py::object>& all_outputs_of_kernel_run,
-    const std::vector<int>& all_outputs_to_tensor_inputs_reuse_map,
+    const py::tuple& all_outputs_of_kernel_run,
+    const std::vector<int64_t>& all_outputs_to_tensor_inputs_reuse_map,
     const std::unordered_map<int, at::Tensor>& raw_input_tensors_used_inplace,
     bool is_backward) {
   CustomFuncOpKernelInfo& kernel_info = GetKernelInfoMap().at(kernel_invoke_id);
@@ -263,7 +270,9 @@ void detect_memory_reuse_once(
   std::unordered_map<size_t, int> input_tensor_address_to_tensor_input_index_map;
   input_tensor_address_to_tensor_input_index_map.reserve(input_tensors_used_for_fw_run.size());
   for (auto& input : input_tensors_used_for_fw_run) {
-    input_tensor_address_to_tensor_input_index_map.insert({{input.second.data_ptr(), input.second.defined() ? input.first : -1}});
+    input_tensor_address_to_tensor_input_index_map.insert(
+        {{static_cast<size_t>(reinterpret_cast<uintptr_t>(input.second.data_ptr())),
+          input.second.defined() ? input.first : -1}});
   }
 
   std::string log_prefix = func_name + "->" + (is_backward ? "Backward" : "Forward");
@@ -280,8 +289,9 @@ void detect_memory_reuse_once(
       continue;
     }
     at::Tensor t = THPVariable_Unpack(arg.ptr());
-    if (input_tensor_address_to_tensor_input_index_map.find(t.data_ptr()) != input_tensor_address_to_tensor_input_index_map.end()) {
-      int tensor_input_index = input_tensor_address_to_tensor_input_index_map.at(t.data_ptr());
+    size_t t_data_address = static_cast<size_t>(reinterpret_cast<uintptr_t>(t.data_ptr()));
+    if (input_tensor_address_to_tensor_input_index_map.find(t_data_address) != input_tensor_address_to_tensor_input_index_map.end()) {
+      int tensor_input_index = input_tensor_address_to_tensor_input_index_map.at(t_data_address);
       TORCH_CHECK(tensor_input_index != -1, "Reused tensor input index should not be -1");
       detected_reuse_map[output_index] = tensor_input_index;
     }
@@ -336,10 +346,10 @@ void _process_inplace_outputs(
     const CustomFuncOpKernelInfo& kernel_info,
     const std::string& func_name,
     const std::unordered_map<int, at::Tensor>& input_tensors_used_for_fw_run,
-    const std::vector<int>& all_outputs_to_tensor_inputs_reuse_map,
+    const std::vector<int64_t>& all_outputs_to_tensor_inputs_reuse_map,
     const std::unordered_map<int, at::Tensor>& raw_input_tensors_used_inplace,
     bool is_backward,
-    py::list& all_outputs_of_kernel_run) {
+    py::tuple& all_outputs_of_kernel_run) {
   // Procedure 3: Do copies for 2.1.2 cases.
   for (auto output_index : kernel_info.output_indices_for_clone) {
     std::cout << "{log_prefix}ONNX Op attribute "
@@ -354,7 +364,7 @@ void _process_inplace_outputs(
 
   // Procedure 4: Do copies for 2.0.2 cases.
   if (!is_backward) {
-    for (const auto& pair : raw_input_tensors_used_inplace) {
+    for (auto& pair : raw_input_tensors_used_inplace) {
       auto raw_tensor_input_index = pair.first;
       auto raw_input_tensor = pair.second;
       // raw_input_tensor can be None for backward run, but backward won't go here.
@@ -362,8 +372,8 @@ void _process_inplace_outputs(
         continue;
       }
 
-      if (!kernel_info.tensor_input_indices_to_save_in_ctx[raw_tensor_input_index] &&
-          !kernel_info.tensor_input_indices_for_mark_dirty[raw_tensor_input_index]) {
+      if (!kernel_info.tensor_input_indices_to_save_in_ctx.at(raw_tensor_input_index) &&
+          !kernel_info.tensor_input_indices_for_mark_dirty.at(raw_tensor_input_index)) {
         continue;
       }
 
@@ -371,26 +381,21 @@ void _process_inplace_outputs(
       // because even for those tensor indices not in
       // tensor_input_indices_to_save_in_ctx/tensor_input_indices_for_mark_dirty, we still need to do the
       // copy for the first-time run.
-      if (raw_input_tensor.data_ptr() == input_tensors_used_for_fw_run[raw_tensor_input_index].data_ptr()) {
+      if (raw_input_tensor.data_ptr() == input_tensors_used_for_fw_run.at(raw_tensor_input_index).data_ptr()) {
         // If the raw input tensor is not copied, we don't need this handling.
         continue;
       }
 
       // for each tensor, we don't do the copy once.
-      bool copied = False;
-
+      bool copied = false;
       std::vector<size_t> output_indices_reusing_current_raw_input;
       for (size_t output_index = 0; output_index < all_outputs_to_tensor_inputs_reuse_map.size(); ++output_index) {
         if (all_outputs_to_tensor_inputs_reuse_map[output_index] == raw_tensor_input_index) {
           output_indices_reusing_current_raw_input.push_back(output_index);
         }
       }
-      output_indices_reusing_current_raw_input = [
-          output_index
-          for output_index, input_index in enumerate(all_outputs_to_tensor_inputs_reuse_map)
-          if input_index == raw_tensor_input_index
-      ]
-      size_t output_tensor_address = THPVariable_Unpack(all_outputs_of_kernel_run[output_indices_reusing_current_raw_input[0]].ptr()).data_ptr();
+
+      auto output_tensor_address = THPVariable_Unpack(all_outputs_of_kernel_run[output_indices_reusing_current_raw_input[0]].ptr()).data_ptr();
       for (size_t& output_index : output_indices_reusing_current_raw_input) {
         auto t = THPVariable_Unpack(all_outputs_of_kernel_run[output_index].ptr());
         TORCH_CHECK(output_tensor_address == t.data_ptr(),
@@ -399,12 +404,13 @@ void _process_inplace_outputs(
         if (!copied) {
           // Only need a copy once.
           // Inplace copy only happens for non-leaf variables, so we have to set requires_grad to False.
-          raw_input_tensor.requires_grad = false;
+          raw_input_tensor.requires_grad_(false);
           raw_input_tensor.copy_(t);
-          std::count << log_prefix << "Copy output tensor " << output_index << " to raw input tensor " << raw_tensor_input_index << "."
-                     << !kernel_info.is_first_run
-              ? "Provide output to input reuse mapping to avoid the copy overhead."
-              : "" << std::endl;
+          std::cout << "Copy output tensor " << output_index << " to raw input tensor " << raw_tensor_input_index << "."
+                    << (!kernel_info.is_first_run
+                            ? "Provide output to input reuse mapping to avoid the copy overhead."
+                            : "")
+                    << std::endl;
 
           copied = true;
         }
@@ -481,13 +487,13 @@ std::vector<PyObject*> custom_function_forward_runner(const char* func_name_char
       tensor.requires_grad_(requires_grad);
 
       if (kernel_info.safe_run_enabled) {
-        if (kernel_info.is_first_run) {
-          bool is_input_used_inplace = std::find(inplace_map.begin(), inplace_map.end(), tensor_input_index) !=
-                                       inplace_map.end();
-          if (is_input_used_inplace) {
-            raw_input_tensors_used_inplace[tensor_input_index] = tensor;
-          }
+        bool is_input_used_inplace = std::find(inplace_map.begin(), inplace_map.end(), tensor_input_index) !=
+                                     inplace_map.end();
+        if (is_input_used_inplace) {
+          raw_input_tensors_used_inplace[tensor_input_index] = tensor;
+        }
 
+        if (kernel_info.is_first_run) {
           at::Tensor tensor_clone;
           if (is_training_mode) {
             at::AutoGradMode enable_grad(true);
@@ -498,7 +504,6 @@ std::vector<PyObject*> custom_function_forward_runner(const char* func_name_char
 
           raii_call_args.push_back(py::reinterpret_steal<py::object>(THPVariable_Wrap(tensor_clone)));
           input_tensors_used_for_fw_run[tensor_input_index] = tensor_clone;
-
         } else {
           // Saving tensor for backward only affect the training.
           bool is_input_index_saved_in_ctx =
@@ -512,15 +517,16 @@ std::vector<PyObject*> custom_function_forward_runner(const char* func_name_char
             auto wrapped_arg = tensor.clone();
             wrapped_arg.requires_grad_(requires_grad);
             raii_call_args.push_back(py::reinterpret_steal<py::object>(THPVariable_Wrap(wrapped_arg)));
+            input_tensors_used_for_fw_run[tensor_input_index] = wrapped_arg;
           } else {
             raii_call_args.push_back(py::reinterpret_steal<py::object>(THPVariable_Wrap(tensor)));
+            input_tensors_used_for_fw_run[tensor_input_index] = tensor;
           }
         }
       } else {
         raii_call_args.push_back(py::reinterpret_steal<py::object>(THPVariable_Wrap(tensor)));
       }
 
-      input_tensors_used_for_fw_run[tensor_input_index] = wrapped_args.back();
       tensor_input_index++;
     }
 
@@ -567,22 +573,25 @@ std::vector<PyObject*> custom_function_forward_runner(const char* func_name_char
       ctx = py::none();
     }
 
-    if (kernel_info.is_first_run) {
-      detect_memory_reuse_once(  // NOLINT
-          kernel_invoke_id,
-          func_name,
-          input_tensors_used_for_fw_run,
-          forward_outputs /*all_outputs_of_kernel_run*/,
-          inplace_map /*all_outputs_to_tensor_inputs_reuse_map*/,
-          raw_input_tensors_used_inplace,
-          false /*is_backward*/);
-    }
+    if (kernel_info.safe_run_enabled) {
+      if (kernel_info.is_first_run) {
+        detect_memory_reuse_once(kernel_invoke_id,
+                                 func_name,
+                                 input_tensors_used_for_fw_run,
+                                 forward_outputs /*all_outputs_of_kernel_run*/,
+                                 inplace_map /*all_outputs_to_tensor_inputs_reuse_map*/,
+                                 raw_input_tensors_used_inplace,
+                                 false /*is_backward*/);
+      }
 
-    _process_inplace_outputs(kernel_info, func_name, input_tensors_used_for_fw_run,
-                             inplace_map /*all_outputs_to_tensor_inputs_reuse_map*/,
-                             raw_input_tensors_used_inplace,
-                             false /*is_backward*/,
-                             forward_outputs /*all_outputs_of_kernel_run*/);
+      _process_inplace_outputs(kernel_info,
+                               func_name,
+                               input_tensors_used_for_fw_run,
+                               inplace_map /*all_outputs_to_tensor_inputs_reuse_map*/,
+                               raw_input_tensors_used_inplace,
+                               false /*is_backward*/,
+                               forward_outputs /*all_outputs_of_kernel_run*/);
+    }
 
     std::vector<PyObject*> rets;
     Py_INCREF(ctx.ptr());

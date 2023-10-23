@@ -45,68 +45,54 @@ void clear_all_grad_fns();
 
 bool get_materialize_grads(at::Tensor target);
 
-std::vector<bool> are_tensors_marked_as_dirty(at::Tensor target, std::vector<at::Tensor> tensors_to_check);
+std::vector<bool> are_tensors_marked_as_dirty(at::Tensor& target, std::vector<at::Tensor>& tensors_to_check);
 
 class CustomFuncOpKernelInfo {
  public:
   CustomFuncOpKernelInfo(const std::string& invoke_id, bool safe_run) {
-    // # kernel_invoke_id is a string contains session thread id, op kernel creation time stamp in ms, a random int,
-    // # and address of op_kernel pointer. This can guarantee the uniqueness of the key in case of multiple
-    // # instances of a same named PythonOp/PythonOpGrad in one session, or multiple sessions.
     kernel_invoke_id = invoke_id;
 
     safe_run_enabled = safe_run;
 
     // position_to_tensor_index_map: Optional[Tuple[Tuple[int, ...], ...]] = None
-
-    // # For the tensors generated from ORT backend, there is special handling here:
-    // # 1. For the first time run for the kernel (the uniqueness of the kernel is defined by kernel_invoke_id),
-    // # all such tensors will be cloned in case they are saved in context (but ORT backend is not aware of the
-    // # reference, may release the content of the tensor before it is needed in backward). Once
-    // # `autograd.Function.apply` completes, by checking the existence of the tensor in the saved_tensors,
-    // # `_GlobalOpKernelInfoMap` is updated to save the input indices that are saved in context.
-    // # 2. For the subsequent runs, if the input index is in `tensor_input_indices_to_save_in_ctx`, the tensor
-    // # will be cloned before fed into `autograd.Function.apply` as input.
-    // self.tensor_input_indices_to_save_in_ctx: Optional[Tuple[int, ...]] = None
-
-    // # To align with PyTorch `ctx.set_materialize_grads(False|True)``
-    // # materialize_grads_config is a map from output index to (device, dtype, shape) of the output tensor, used
-    // # for materializing the gradient of the output tensor in backward.
-    // self.materialize_grads: bool = False
-    // self.materialize_grads_config: Optional[Dict[int, Tuple[torch.device, torch.dtype, torch.shape]]] = None
-
-    // # For the tensors generated from ORT backend, there is special handling here:
-    // # 1. For the first time run for the kernel (the uniqueness of the kernel is defined by kernel_invoke_id),
-    // # all such tensors will be cloned (with gradient) in case they are marked as dirty (if not cloned, but marked
-    // # as dirty, PyTorch will complain the tensor is a leaf, should not be used for inplace update). Once
-    // # `autograd.Function.apply` completes, by checking the existence of the tensor in the dirty_tensors,
-    // # `_GlobalOpKernelInfoMap` is updated to save the input indices that are marked as dirty.
-    // # 2. For the subsequent runs, if the input index is in `tensor_input_indices_for_mark_dirty`, the tensor
-    // # will be cloned (with gradient) before fed into `autograd.Function.apply` as input.
-    // self.tensor_input_indices_for_mark_dirty: Optional[Tuple[int, ...]] = None
-
-    // # A list of output indices that needs to be clone before returned, due to inplace update analysis.
-    // self.output_indices_for_clone: Optional[List[int]] = None
-
-    // self.tensor_input_states = OrderedDict()  # key: tensor input index, value: TensorInputState.
   }
 
-  // std::tuple<int, int> check_with_input_index(int tensor_input_index){
-  //     if tensor_input_index not in self.tensor_input_states:
-  //         is_input_index_saved_in_ctx = tensor_input_index in self.tensor_input_indices_to_save_in_ctx
-  //         is_input_index_marked_dirty = tensor_input_index in self.tensor_input_indices_for_mark_dirty
-  //         self.tensor_input_states[tensor_input_index] = [is_input_index_saved_in_ctx, is_input_index_marked_dirty]
-  //     return self.tensor_input_states[tensor_input_index]
-  // }
-
+  // kernel_invoke_id is a string contains session thread id, op kernel creation time stamp in ms, a random int,
+  // and address of op_kernel pointer. This can guarantee the uniqueness of the key in case of multiple
+  // instances of a same named PythonOp/PythonOpGrad in one session, or multiple sessions.
   std::string kernel_invoke_id;
-  std::unordered_map<int, int> input_global_index_to_tensor_index_map;
-  std::optional<std::unordered_map<int, bool>> tensor_input_indices_to_save_in_ctx;
+  // std::unordered_map<int, int> input_global_index_to_tensor_index_map;
+
+  // For the tensors generated from ORT backend, there is special handling here:
+  // 1. For the first time run for the kernel (the uniqueness of the kernel is defined by kernel_invoke_id),
+  //    all such tensors will be cloned in case they are saved in context (but ORT backend is not aware of the
+  //    reference, may release the content of the tensor before it is needed in backward). Once
+  //    `autograd.Function.apply` completes, by checking the existence of the tensor in the saved_tensors,
+  //    `_GlobalOpKernelInfoMap` is updated to save the input indices that are saved in context.
+  // 2. For the subsequent runs, if the input index is in `tensor_input_indices_to_save_in_ctx`, the tensor
+  //    will be cloned before fed into `autograd.Function.apply` as input.
+  std::unordered_map<int, bool> tensor_input_indices_to_save_in_ctx;
+
+  // To align with PyTorch `ctx.set_materialize_grads(False|True)`, default to be true.
+  // materialize_grads_config is a map from output index to (device, dtype, shape) of the output tensor, used
+  // for materializing the gradient of the output tensor in backward.
   bool materialize_grads{true};
+  // key: output index, value: (shape, tensor options including device, layerout, data types, etc)
   std::unordered_map<size_t, std::tuple<std::vector<int64_t>, c10::TensorOptions>> materialize_grads_config;
 
-  std::optional<std::unordered_map<int, bool>> tensor_input_indices_for_mark_dirty;
+  // For the tensors generated from ORT backend, there is special handling here:
+  // 1. For the first time run for the kernel (the uniqueness of the kernel is defined by kernel_invoke_id),
+  //    all such tensors will be cloned (with gradient) in case they are marked as dirty (if not cloned, but marked
+  //    as dirty, PyTorch will complain the tensor is a leaf, should not be used for inplace update). Once
+  //    `autograd.Function.apply` completes, by checking the existence of the tensor in the dirty_tensors,
+  //    `_GlobalOpKernelInfoMap` is updated to save the input indices that are marked as dirty.
+  // 2. For the subsequent runs, if the input index is in `tensor_input_indices_for_mark_dirty`, the tensor
+  //    will be cloned (with gradient) before fed into `autograd.Function.apply` as input.
+  std::unordered_map<int, bool> tensor_input_indices_for_mark_dirty;
+
+  // A list of output indices that needs to be clone before returned, due to inplace update analysis.
   std::vector<int> output_indices_for_clone;
+
   bool is_first_run{true};
   bool safe_run_enabled{false};
 };

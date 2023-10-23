@@ -1549,9 +1549,9 @@ def test_python_op_save_input_for_backward():
                     count += 1
 
         if index == 0:
-            assert count == 2
+           assert count == 2
         else:
-            assert count == 0
+           assert count == 0
 
 
 class DupNamedFunction(torch.autograd.Function):

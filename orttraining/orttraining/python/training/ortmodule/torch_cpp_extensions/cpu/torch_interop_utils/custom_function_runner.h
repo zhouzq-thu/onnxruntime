@@ -101,11 +101,11 @@ class CustomFuncOpKernelInfo {
 
   std::string kernel_invoke_id;
   std::unordered_map<int, int> input_global_index_to_tensor_index_map;
-  std::optional<std::unordered_map<int, int>> tensor_input_indices_to_save_in_ctx;
+  std::optional<std::unordered_map<int, bool>> tensor_input_indices_to_save_in_ctx;
   bool materialize_grads{true};
   std::unordered_map<size_t, std::tuple<std::vector<int64_t>, c10::TensorOptions>> materialize_grads_config;
 
-  std::optional<std::unordered_map<int, int>> tensor_input_indices_for_mark_dirty;
+  std::optional<std::unordered_map<int, bool>> tensor_input_indices_for_mark_dirty;
   std::vector<int> output_indices_for_clone;
   bool is_first_run{true};
   bool safe_run_enabled{false};

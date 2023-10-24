@@ -51,17 +51,13 @@ class CustomFuncOpKernelInfo {
  public:
   CustomFuncOpKernelInfo(const std::string& invoke_id, bool safe_run) {
     kernel_invoke_id = invoke_id;
-
     safe_run_enabled = safe_run;
-
-    // position_to_tensor_index_map: Optional[Tuple[Tuple[int, ...], ...]] = None
   }
 
   // kernel_invoke_id is a string contains session thread id, op kernel creation time stamp in ms, a random int,
   // and address of op_kernel pointer. This can guarantee the uniqueness of the key in case of multiple
   // instances of a same named PythonOp/PythonOpGrad in one session, or multiple sessions.
   std::string kernel_invoke_id;
-  // std::unordered_map<int, int> input_global_index_to_tensor_index_map;
 
   // For the tensors generated from ORT backend, there is special handling here:
   // 1. For the first time run for the kernel (the uniqueness of the kernel is defined by kernel_invoke_id),
@@ -91,7 +87,7 @@ class CustomFuncOpKernelInfo {
   std::unordered_map<int, bool> tensor_input_indices_for_mark_dirty;
 
   // A list of output indices that needs to be clone before returned, due to inplace update analysis.
-  std::vector<int> output_indices_for_clone;
+  std::vector<size_t> output_indices_for_clone;
 
   bool is_first_run{true};
   bool safe_run_enabled{false};

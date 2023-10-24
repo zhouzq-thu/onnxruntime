@@ -20,6 +20,7 @@ typedef std::vector<PyObject*> (*CustomFunctionRunnerType)(const char* func_name
                                                            const bool is_training_mode,
                                                            const std::vector<int64_t>& inplace_map,
                                                            const char* kernel_invoke_id_char,
+                                                           const bool safe_run_mode_enabled,
                                                            const std::vector<PyObject*>& tensor_args);
 
 class OrtTorchFunctionPool final {
@@ -42,6 +43,8 @@ class OrtTorchFunctionPool final {
   //  1. The returned value doesn't own its Python function.
   //  2. Caller of GetBackwardCore should not decrease the reference count of the returned object.
   PyObject* GetBackwardCore(const std::string& key);  // The "key" is the "name" attribute in PythonOpGrad.
+
+  PyObject* GetUnsafeForwardCore(const std::string& key);  // The "key" is the "name" attribute in PythonOp.
 
   // Shape inference function is used to infer output shape of a PythonOp.
   void RegisterShapeInferenceFunction(const std::string& key, PyObject* obj);
@@ -111,6 +114,7 @@ class OrtTorchFunctionPool final {
 
   std::unordered_map<std::string, PythonObjectPtr> forward_core_pool_;
   std::unordered_map<std::string, PythonObjectPtr> backward_core_pool_;
+  std::unordered_map<std::string, PythonObjectPtr> unsafe_forward_core_pool_;
   std::unordered_map<std::string, PythonObjectPtr> shape_inference_function_pool_;
   std::unordered_map<std::string, PythonObjectPtr> input_alias_function_pool_;
 

@@ -275,8 +275,6 @@ class ORTZeROOffloadPreForwardFunction(torch.autograd.Function):
 
         pre_forward_with_kwargs_function(module)
 
-
-
         ctx.module = module
 
         # # updated_args_tensors, _, _, _ = extract_data_and_schema(updated_args)

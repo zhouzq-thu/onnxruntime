@@ -19,7 +19,7 @@ setup(
             name="torch_interop_utils",
             sources=[os.path.join(os.path.dirname(__file__), filename) for filename in source_filenames],
             extra_compile_args=extra_compile_args,
-            include_dirs=[os.path.join(os.path.dirname(__file__), filename) for filename in header_filenames],
+            include_dirs=[os.path.join(os.path.dirname(__file__), filename) for filename in header_filenames] + ["/usr/local/cuda-11.8/include/", ],
         )
     ],
     cmdclass={"build_ext": cpp_extension.BuildExtension},

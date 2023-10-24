@@ -51,6 +51,9 @@ void PythonOpBase::Init(const OpKernelInfo& info) {
   ORT_THROW_IF_ERROR(info.GetAttr("func_name", &name_));
 
   is_training_mode_ = static_cast<bool>(info.GetAttrOrDefault("training_mode", static_cast<int64_t>(0)));
+
+  safe_run_mode_enabled_ = static_cast<bool>(info.GetAttrOrDefault("safe_run_mode", static_cast<int64_t>(1)));
+
   ORT_THROW_IF_ERROR(info.GetAttr("input_convention", &input_convention_));
 
   input_requires_grads_ = info.GetAttrsOrDefault(
@@ -144,7 +147,8 @@ void PythonOpBase::RunForward(OpKernelContext* context,
   // Invoke Python calls.
   TorchProxy::GetInstance().Forward(
       name_,
-      OrtTorchFunctionPool::GetInstance().GetForwardCore(name_),
+      safe_run_mode_enabled_ ? OrtTorchFunctionPool::GetInstance().GetForwardCore(name_)
+                             : OrtTorchFunctionPool::GetInstance().GetUnsafeForwardCore(name_),
       input_requires_grads_,
       args,
       arg_positions_,
@@ -153,6 +157,7 @@ void PythonOpBase::RunForward(OpKernelContext* context,
       is_training_mode_,
       all_output_to_tensor_input_reuse_map_,
       kernel_invoke_id_,
+      safe_run_mode_enabled_,
       diff_ctx,
       returned_ortvalues);
 
@@ -328,7 +333,7 @@ void PythonOpGradBase::Init(const OpKernelInfo& info) {
   output_tensor_requires_grads_ = info.GetAttrsOrDefault("output_tensor_requires_grads", std::vector<int64_t>());
   ORT_ENFORCE(output_tensor_types_.size() == output_tensor_requires_grads_.size(),
               "backward tensor output count mismatch");
-
+  safe_run_mode_enabled_ = static_cast<bool>(info.GetAttrOrDefault("safe_run_mode", static_cast<int64_t>(1)));
   std::vector<int64_t> tensor_output_to_tensor_input_alias_map =
       info.GetAttrsOrDefault("tensor_reuse_map",
                              std::vector<int64_t>((info.node().OutputDefs().size()), -1));
@@ -372,6 +377,7 @@ void PythonOpGradBase::RunBackward(OpKernelContext* context,
       const_arg_positions_,
       all_output_to_tensor_input_reuse_map_,
       kernel_invoke_id_,
+      safe_run_mode_enabled_,
       returned_ortvalues);
 
   OrtTorchFunctionPool::GetInstance().UnregisterContext(*context_index_ptr);

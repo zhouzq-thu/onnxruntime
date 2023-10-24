@@ -87,12 +87,14 @@ void OrtTorchFunctionPool::RegisterTorchAutogradFunction(
   // New reference.
   PythonObjectPtr forward(PyObject_GetAttrString(obj, "apply"), PythonObjectDeleter);
   PythonObjectPtr backward(PyObject_GetAttrString(obj, "backward"), PythonObjectDeleter);
-
+  PythonObjectPtr unsafe_forward(PyObject_GetAttrString(obj, "forward"), PythonObjectDeleter);
   ORT_ENFORCE(forward.get(), "apply attribute not found when registering ", key);
   ORT_ENFORCE(backward.get(), "backward attribute not found when registering ", key);
+  ORT_ENFORCE(unsafe_forward.get(), "forward attribute not found when registering ", key);
 
   RegisterEntry(mutex_, key, forward.get(), forward_core_pool_);
   RegisterEntry(mutex_, key, backward.get(), backward_core_pool_);
+  RegisterEntry(mutex_, key, unsafe_forward.get(), unsafe_forward_core_pool_);
 }
 
 void OrtTorchFunctionPool::RegisterShapeInferenceFunction(const std::string& key,
@@ -139,6 +141,14 @@ PyObject* OrtTorchFunctionPool::GetBackwardCore(const std::string& key) {
   std::lock_guard<std::mutex> lock(mutex_);
   auto iter = backward_core_pool_.find(key);
   ORT_ENFORCE(iter != backward_core_pool_.end(), "No backward registered for ", key);
+  return iter->second.get();
+}
+
+PyObject* OrtTorchFunctionPool::GetUnsafeForwardCore(const std::string& key) {
+  ORT_ENFORCE(!key.empty(), "Cannot be empty string.");
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto iter = unsafe_forward_core_pool_.find(key);
+  ORT_ENFORCE(iter != unsafe_forward_core_pool_.end(), "No unsafe forward registered for ", key);
   return iter->second.get();
 }
 
@@ -212,6 +222,7 @@ void OrtTorchFunctionPool::UnRegisterGlobalFunctions() {
 void OrtTorchFunctionPool::UnRegisterModelSpecificFunctions() {
   forward_core_pool_.clear();
   backward_core_pool_.clear();
+  unsafe_forward_core_pool_.clear();
   shape_inference_function_pool_.clear();
   input_alias_function_pool_.clear();
   miscellaneous_const_input_pool_.clear();

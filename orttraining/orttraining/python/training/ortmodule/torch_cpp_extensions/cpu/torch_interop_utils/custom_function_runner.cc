@@ -12,6 +12,7 @@
 #include <torch/csrc/utils/tensor_new.h>
 #include <torch/csrc/autograd/python_cpp_function.h>
 // #include <aten/src/ATen/dlpack.h>
+#include <nvtx3/nvToolsExt.h>
 
 #include <chrono>
 #include <iostream>
@@ -494,18 +495,21 @@ std::vector<PyObject*> custom_function_forward_runner(const char* func_name_char
                                                       const bool is_training_mode,
                                                       const std::vector<int64_t>& inplace_map,
                                                       const char* kernel_invoke_id_char,
+                                                      const bool safe_run_mode_enabled,
                                                       const std::vector<PyObject*>& args) {
   try {
     pybind11::gil_scoped_acquire gil;
 
     std::string func_name(func_name_char);
     std::string kernel_invoke_id(kernel_invoke_id_char);
-    bool is_backward = false;
+    std::string tag1 = func_name + ".fw";
+    nvtxRangePushA(tag1.c_str());
+    bool is_backward = safe_run_mode_enabled;
     std::string log_prefix = func_name + " -> " + (is_backward ? "Backward " : "Forward ");
 
     auto it = GetKernelInfoMap().find(kernel_invoke_id);
     if (it == GetKernelInfoMap().end()) {
-      bool safe_run = true;
+      bool safe_run = false;
       GetKernelInfoMap().emplace(kernel_invoke_id, CustomFuncOpKernelInfo(kernel_invoke_id, safe_run));
     }
 
@@ -582,13 +586,15 @@ std::vector<PyObject*> custom_function_forward_runner(const char* func_name_char
         kernel_info.tensor_input_indices_for_mark_dirty.insert({{i, false}});
       }
     }
-
+    std::string tag2 = func_name + ".call_func";
+    nvtxRangePushA(tag2.c_str());
     py::tuple call_args = py::cast(raii_call_args);
     PyObject* result_pyobj;
     {
       at::AutoGradMode enable_grad(is_training_mode);
       result_pyobj = PyObject_CallObject(reinterpret_cast<PyObject*>(callback), call_args.ptr());
     }
+    nvtxRangePop();
 
     if (!result_pyobj) {
       throw std::runtime_error("Get null result");
@@ -611,10 +617,13 @@ std::vector<PyObject*> custom_function_forward_runner(const char* func_name_char
 
     py::object ctx;
     if (is_training_mode) {
+      std::string tag3 = func_name + ".ctx";
+      nvtxRangePushA(tag3.c_str());
       ctx = _finalize_training_mode_forward(input_tensors_used_for_fw_run, forward_outputs, kernel_info);
       if (!ctx.is_none()) {
         PyObject_SetAttrString(ctx.ptr(), "fw_kernel_invoke_id", py::cast(kernel_invoke_id).ptr());
       }
+      nvtxRangePop();
     } else {
       ctx = py::none();
     }
@@ -657,6 +666,8 @@ std::vector<PyObject*> custom_function_forward_runner(const char* func_name_char
                                all_outputs_of_kernel_run /*all_outputs_of_kernel_run*/);
     }
 
+    std::string tag5 = func_name + ".final";
+    nvtxRangePushA(tag5.c_str());
     std::vector<PyObject*> rets;
     rets.reserve(all_outputs_of_kernel_run.size());
     for (auto& py_obj : all_outputs_of_kernel_run) {
@@ -671,12 +682,14 @@ std::vector<PyObject*> custom_function_forward_runner(const char* func_name_char
       DLManagedTensor* dlMTensor = at::toDLPack(THPVariable_Unpack(obj));
       rets.push_back(PyCapsule_New(dlMTensor, "dltensor", DLPack_Capsule_Destructor));
     }
+    nvtxRangePop();
 
     if (kernel_info.is_first_run) {
       kernel_info.is_first_run = false;
     }
 
-    // std::cout << "custom_function_forward_runner>>> completed" << std::endl;
+    nvtxRangePop();
+
     return rets;
   } catch (const std::exception& e) {  // NOLINT
     std::cerr << "custom_function_forward_runner failed with " << e.what() << std::endl;
@@ -691,9 +704,10 @@ std::vector<PyObject*> custom_function_backward_runner(const char* func_name_cha
                                                        const bool is_training_mode,
                                                        const std::vector<int64_t>& inplace_map,
                                                        const char* kernel_invoke_id_char,
+                                                       const bool safe_run_mode_enabled,
                                                        const std::vector<PyObject*>& args) {
   pybind11::gil_scoped_acquire gil;
-  // GilGuard gil;
+
   try {
     std::string func_name(func_name_char);
     std::string kernel_invoke_id(kernel_invoke_id_char);
@@ -702,7 +716,7 @@ std::vector<PyObject*> custom_function_backward_runner(const char* func_name_cha
     // auto t0 = std::chrono::high_resolution_clock::now();
     auto it = GetKernelInfoMap().find(kernel_invoke_id);
     if (it == GetKernelInfoMap().end()) {
-      bool safe_run = true;
+      bool safe_run = safe_run_mode_enabled;
       GetKernelInfoMap().emplace(kernel_invoke_id, CustomFuncOpKernelInfo(kernel_invoke_id, safe_run));
     }
 
@@ -724,14 +738,14 @@ std::vector<PyObject*> custom_function_backward_runner(const char* func_name_cha
       }
 
       at::Tensor tensor;
-      // Assume it's a DLPack tensor and convert it to PyTorch tensor.
       bool is_dlpack = PyCapsule_IsValid(args[arg_index], "dltensor") != 0;
       if (is_dlpack) {
         tensor = torch::utils::tensor_fromDLPack(args[arg_index]);
       } else {
         TORCH_CHECK(args[arg_index] == Py_None, "Only None is supported for non-tensor input.");
         PyObject* fw_kernel_invoke_id = PyObject_GetAttrString(ctx.ptr(), "fw_kernel_invoke_id");
-        std::string fw_kernel_invoke_id_str = py::cast<std::string>(py::reinterpret_borrow<py::object>(fw_kernel_invoke_id));
+        std::string fw_kernel_invoke_id_str =
+            py::cast<std::string>(py::reinterpret_borrow<py::object>(fw_kernel_invoke_id));
         CustomFuncOpKernelInfo& fw_kernel_info = GetKernelInfoMap().at(fw_kernel_invoke_id_str);
         if (fw_kernel_info.materialize_grads) {
           auto& config = fw_kernel_info.materialize_grads_config.at(arg_index - 1);

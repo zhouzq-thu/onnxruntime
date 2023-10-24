@@ -10,6 +10,7 @@
 # - has_overflow_partitioned_grads_serial : https://github.com/microsoft/DeepSpeed/blob/d8e9ef6f99e27bb95e10bd146d145b3372b4cfda/deepspeed/runtime/zero/stage2.py#L1799
 # --------------------------------------------------------------------------
 
+import inspect
 import types
 import warnings
 
@@ -22,6 +23,41 @@ from ._multi_tensor_apply import MultiTensorApply
 
 multi_tensor_applier = MultiTensorApply(2048 * 32)
 
+
+def _get_sources(function):
+    if torch.distributed.get_rank() == 0:
+        lines = inspect.getsource(function)
+        print("-------------")
+        print(lines)
+        print("-------------")
+        a = inspect.unwrap(function)
+        print(inspect.getsource(a))
+        print("-------------")
+        b = inspect.unwrap(a)
+        print(inspect.getsource(b))
+        print("-------------")
+
+_ds_version_to_sources_map = {
+    "0.9.2": {
+        "has_overflow_serial":
+            "    def has_overflow_serial(self, params, is_grad_list=False):"
+            "        for p in params:"
+            "            if p.grad is not None and self._has_inf_or_nan(p.grad.data):"
+            "                return True"
+            ""
+            "        return False"
+            "",
+        "get_grad_norm_direct": "",
+        "has_overflow_partitioned_grads_serial":
+            "    def has_overflow_partitioned_grads_serial(self):"
+            "        for i in range(len(self.fp16_groups)):"
+            "            for j, grad in enumerate(self.averaged_gradients[i]):"
+            "                if grad is not None and self._has_inf_or_nan(grad.data, j):"
+            "                    return True"
+            "        return False"
+            "",
+    }
+}
 
 class DeepSpeedZeROModifier(FP16OptimizerModifier):
     def __init__(self, optimizer, **kwargs) -> None:
@@ -39,6 +75,16 @@ class DeepSpeedZeROModifier(FP16OptimizerModifier):
         # it's safe to update the version supporting list. Otherwise, or the file is moved or renamed,
         # we need to check the implementation of these functions in detail.
         ds_version = Version(deepspeed.__version__)
+
+
+
+        _get_sources(self._optimizer.has_overflow_serial)
+
+        _get_sources(self._optimizer.get_grad_norm_direct)
+
+
+        _get_sources(self._optimizer.has_overflow_partitioned_grads_serial)
+
         if ds_version > Version("0.9.1") or ds_version < Version("0.4.0"):
             warnings.warn(
                 "Skip modifying optimizer because of unsupported DeepSpeed version {}, "

@@ -50,6 +50,7 @@ class TorchProxy {
       const bool is_training_mode,
       const std::vector<int64_t>& inplace_map,
       const std::string& invoke_id,
+      bool safe_run_mode_enabled,
       void** diff_ctx,
       std::vector<OrtValue>& returned_ortvalues);
 
@@ -62,6 +63,7 @@ class TorchProxy {
       const std::vector<int64_t>& obj_indices,
       const std::vector<int64_t>& inplace_map,
       const std::string& invoke_id,
+      bool safe_run_mode_enabled,
       std::vector<OrtValue>& returned_ortvalues);
 
   /**

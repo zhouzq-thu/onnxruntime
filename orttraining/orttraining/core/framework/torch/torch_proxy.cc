@@ -200,6 +200,7 @@ void Invoke(
     const bool is_training_mode,
     const std::vector<int64_t>& inplace_map,
     const std::string& invoke_id,
+    bool safe_run_mode_enabled,
     void** diff_ctx,
     std::vector<OrtValue>& returned_ortvalues) {
   const auto len = tensor_args.size() + obj_args.size();
@@ -223,6 +224,7 @@ void Invoke(
                    is_training_mode,
                    inplace_map,
                    invoke_id.c_str(),
+                   safe_run_mode_enabled,
                    args);
 
   std::vector<PythonObjectPtr> raii_results;
@@ -245,6 +247,7 @@ void TorchProxy::Forward(
     const bool is_training_mode,
     const std::vector<int64_t>& inplace_map,
     const std::string& invoke_id,
+    bool safe_run_mode_enabled,
     void** diff_ctx,
     std::vector<OrtValue>& returned_ortvalues) {
   // Semantically, this lock uniquely takes the ownership of TorchProxy
@@ -266,6 +269,7 @@ void TorchProxy::Forward(
       is_training_mode,
       inplace_map,
       invoke_id,
+      safe_run_mode_enabled,
       diff_ctx,
       returned_ortvalues);
 }
@@ -279,6 +283,7 @@ void TorchProxy::Backward(
     const std::vector<int64_t>& obj_indices,
     const std::vector<int64_t>& inplace_map,
     const std::string& invoke_id,
+    bool safe_run_mode_enabled,
     std::vector<OrtValue>& returned_ortvalues) {
   // Semantically, this lock uniquely takes the ownership of TorchProxy
   // so that there will be only one of TorchProxy::Forward TorchProxy::Backward
@@ -301,6 +306,7 @@ void TorchProxy::Backward(
       false /* is_training_mode */,
       inplace_map,
       invoke_id,
+      safe_run_mode_enabled,
       nullptr /* context to store */,
       returned_ortvalues);
 }

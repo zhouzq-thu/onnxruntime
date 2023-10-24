@@ -100,6 +100,7 @@ std::vector<PyObject*> custom_function_forward_runner(const char* func_name_char
                                                       const bool is_training_mode,
                                                       const std::vector<int64_t>& inplace_map,
                                                       const char* kernel_invoke_id_char,
+                                                      const bool safe_run_mode_enabled,
                                                       const std::vector<PyObject*>& tensor_args);
 
 std::vector<PyObject*> custom_function_backward_runner(const char* func_name_char,
@@ -109,4 +110,5 @@ std::vector<PyObject*> custom_function_backward_runner(const char* func_name_cha
                                                        const bool is_training_mode,
                                                        const std::vector<int64_t>& inplace_map,
                                                        const char* kernel_invoke_id_char,
+                                                       const bool safe_run_mode_enabled,
                                                        const std::vector<PyObject*>& args);

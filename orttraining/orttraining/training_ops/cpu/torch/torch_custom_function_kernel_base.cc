@@ -301,7 +301,8 @@ void PythonOpBase::SetOtherOutputs(OpKernelContext* context, std::vector<OrtValu
     size_t output_index = i + 1;
     if (all_output_to_tensor_input_reuse_map_[output_index] != -1) {
       const void* tensor_address = returned_ortvalues[i].Get<Tensor>().DataRaw();
-      const void* input_tensor_address = context->Input<Tensor>(all_output_to_tensor_input_reuse_map_[output_index])->DataRaw();
+      const void* input_tensor_address =
+          context->Input<Tensor>(all_output_to_tensor_input_reuse_map_[output_index])->DataRaw();
       ORT_ENFORCE(tensor_address == input_tensor_address,
                   "PythonOp inplace tensor address mismatch, output index: ", output_index, ", input index: ",
                   all_output_to_tensor_input_reuse_map_[output_index]);

@@ -426,7 +426,8 @@ Status LaunchGroupNormKernel(
     int height,
     int width,
     int num_groups,
-    bool use_swish_activation) {
+    bool use_swish_activation,
+    int default_channels_per_block) {
   if (batch_size > static_cast<int>(kMaxGroupNormBatchSize)) {
     return ORT_MAKE_STATUS(ONNXRUNTIME, StatusCode::NOT_IMPLEMENTED,
                            "only support batch_size <= 32. Got", batch_size);
@@ -456,6 +457,10 @@ Status LaunchGroupNormKernel(
     case 384:
       cPerBlock = 384;
       break;
+    case 640:
+    case 320:
+      cPerBlock = 320;
+      break;
     case 512:
     case 256:
       cPerBlock = 256;
@@ -468,7 +473,7 @@ Status LaunchGroupNormKernel(
       cPerBlock = 128;
       break;
     default:
-      cPerBlock = 320;
+      cPerBlock = default_channels_per_block;
   }
 
   // Find a maximum cPerBlock that num_channels could be divisible by it.
@@ -500,7 +505,15 @@ Status LaunchGroupNormKernel(
   params.hwc = params.hw * params.c;
   params.invHWC = 1.F / (float)(params.hw * params.cPerGroup);
   params.groupsPerBlock = cPerBlock / params.cPerGroup;
+
   params.threads_per_block = NextSize(cPerBlock) / CHANNELS_PER_THREAD;
+
+  static std::once_flag log_debug;
+  std::call_once(log_debug, [](const GroupNormNHWCParams<T>& params) {
+    printf("n=%d h=%d w=%d c=%d groups=%d hw=%d hwPerBlock=%d cPerBlock=%d cPerGroup=%d threads=%d\n",
+           params.n, params.h, params.w, params.c, params.groups, params.hw, params.hwPerBlock,
+           params.cPerBlock, params.cPerGroup, params.threads_per_block);
+  }, params);
 
   // TODO: Update the kernel to support CHANNELS_PER_THREAD==1
   if (cPerBlock > 512 || (params.cPerGroup % CHANNELS_PER_THREAD != 0)) {
@@ -530,12 +543,14 @@ Status LaunchGroupNormKernel(
 template Status LaunchGroupNormKernel<half>(cudaStream_t stream, half* output,
                                             const half* input, const float* gamma, const float* beta, void* workspace,
                                             float epsilon, int batch_size, int num_channels,
-                                            int height, int width, int num_groups, bool swish);
+                                            int height, int width, int num_groups, bool swish,
+                                            int default_channels_per_block);
 
 template Status LaunchGroupNormKernel<float>(cudaStream_t stream, float* output,
                                              const float* input, const float* gamma, const float* beta, void* workspace,
                                              float epsilon, int batch_size, int num_channels,
-                                             int height, int width, int num_groups, bool swish);
+                                             int height, int width, int num_groups, bool swish,
+                                             int default_channels_per_block);
 }  // namespace cuda
 }  // namespace contrib
 }  // namespace onnxruntime

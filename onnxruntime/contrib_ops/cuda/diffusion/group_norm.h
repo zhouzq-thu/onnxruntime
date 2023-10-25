@@ -21,6 +21,7 @@ class GroupNorm final : public CudaKernel {
   float epsilon_;
   int num_groups_;
   bool channels_last_;
+  int default_channels_per_block_; // used in kernel tuning.
 };
 
 }  // namespace cuda

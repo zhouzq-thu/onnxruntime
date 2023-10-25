@@ -4,6 +4,7 @@
 #include "core/providers/cuda/cuda_common.h"
 #include "contrib_ops/cuda/diffusion/group_norm.h"
 #include "contrib_ops/cuda/diffusion/group_norm_impl.h"
+#include "core/platform/env_var_utils.h"
 
 namespace onnxruntime {
 namespace contrib {
@@ -32,7 +33,8 @@ struct DispatchGroupNorm {
                     int height,
                     int width,
                     int num_groups,
-                    bool use_swish_activation) {
+                    bool use_swish_activation,
+                    int32_t default_channels_per_block) {
     typedef typename ToCudaType<T>::MappedType CudaT;
     return LaunchGroupNormKernel<CudaT>(
         stream,
@@ -47,10 +49,12 @@ struct DispatchGroupNorm {
         height,
         width,
         num_groups,
-        use_swish_activation);
+        use_swish_activation,
+        default_channels_per_block);
   }
 };
 
+constexpr const char* kDefaultGroupNormChannelsPerBlock="ORT_GROUP_NORM_DEFAULT_C_PER_BLOCK";
 }  // namespace
 
 GroupNorm::GroupNorm(const OpKernelInfo& op_info) : CudaKernel(op_info) {
@@ -68,6 +72,8 @@ GroupNorm::GroupNorm(const OpKernelInfo& op_info) : CudaKernel(op_info) {
   use_swish_activation_ = (activation == 1);
 
   channels_last_ = (op_info.GetAttrOrDefault<int64_t>("channels_last", static_cast<int64_t>(1)) != 0);
+
+  default_channels_per_block_ = ParseEnvironmentVariableWithDefault<int32_t>(kDefaultGroupNormChannelsPerBlock, 320);
 }
 
 Status GroupNorm::ComputeInternal(OpKernelContext* context) const {
@@ -135,7 +141,8 @@ Status GroupNorm::ComputeInternal(OpKernelContext* context) const {
                                                          height,
                                                          width,
                                                          num_groups_,
-                                                         use_swish_activation_);
+                                                         use_swish_activation_,
+                                                         default_channels_per_block_);
 }
 
 }  // namespace cuda

@@ -10,8 +10,14 @@
     <MobileTargets></MobileTargets>
   </PropertyGroup>
 
-  <!-- add Xamarin mobile targets if we're building an ORT package and the Xamarin workloads are installed -->
-  <PropertyGroup Condition="'$(OrtPackageId)' == 'Microsoft.ML.OnnxRuntime' AND
+  <!-- add Xamarin mobile targets if we're building an ORT package and the Xamarin workloads are installed
+
+       NOTE: We include in a build of the managed package when creating Microsoft.ML.OnnxRuntime.Gpu as both
+             the CPU and GPU packaging pipelines can publish Microsoft.ML.OnnxRuntime.Managed, and we need the targets
+             to be consistent in both.
+  -->
+  <PropertyGroup Condition="('$(OrtPackageId)' == 'Microsoft.ML.OnnxRuntime' OR
+                             '$(OrtPackageId)' == 'Microsoft.ML.OnnxRuntime.Gpu') AND
                             '$(IncludeMobileTargets)' == 'true' AND
                             Exists('$(MSBuildExtensionsPath)\Xamarin\Android') AND
                             Exists('$(MSBuildExtensionsPath)\Xamarin\iOS')">

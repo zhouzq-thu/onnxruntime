@@ -2043,7 +2043,6 @@ def build_nuget_package(
     use_dnnl,
     use_tvm,
     use_winml,
-    use_snpe,
     use_qnn,
     enable_training_apis,
     msbuild_extra_options,
@@ -2100,8 +2099,15 @@ def build_nuget_package(
         # use the solution file that includes Xamarin mobile targets
         sln = "OnnxRuntime.CSharp.sln"
 
-    # cmd_args = ["dotnet", "restore", sln, "--configfile", "NuGet.CSharp.config"]
-    cmd_args = ["msbuild", sln, "/t:restore", "/p:RestoreConfigFile=NuGet.CSharp.config"]
+    extra_options = ["/p:" + option for option in msbuild_extra_options]
+
+    # we have to use msbuild directly if including Xamarin targets as dotnet only supports MAUI (.net6)
+    use_dotnet = False if is_windows() and sln == "OnnxRuntime.CSharp.sln" else True
+
+    if use_dotnet:
+        cmd_args = ["dotnet", "restore", sln, "--configfile", "NuGet.CSharp.config"]
+    else:
+        cmd_args = ["msbuild", sln, "/t:restore", "/p:RestoreConfigFile=NuGet.CSharp.config"] + extra_options
 
     # set build directory based on build_dir arg
     native_dir = os.path.normpath(os.path.join(source_dir, build_dir))
@@ -2119,17 +2125,8 @@ def build_nuget_package(
 
         configuration = "/p:Configuration=" + config
         if not use_winml:
-            # cmd_args = [
-            #     "dotnet",
-            #     "msbuild",
-            #     sln,
-            #     configuration,
-            #     package_name,
-            #     is_linux_build,
-            #     ort_build_dir,
-            #     enable_training_tests,
-            # ]
-            cmd_args = [
+            cmd_args = ["dotnet"] if use_dotnet else []
+            cmd_args += [
                 "msbuild",
                 sln,
                 configuration,
@@ -2138,6 +2135,7 @@ def build_nuget_package(
                 ort_build_dir,
                 enable_training_tests,
             ]
+            cmd_args += extra_options
             print(" ".join(cmd_args))
             run_subprocess(cmd_args, cwd=csharp_build_dir)
         else:
@@ -2168,19 +2166,8 @@ def build_nuget_package(
 
         nuget_exe_arg = '/p:NugetExe="' + nuget_exe + '"'
 
-        # cmd_args = [
-        #     "dotnet",
-        #     "msbuild",
-        #     "OnnxRuntime.CSharp.proj",
-        #     target_name,
-        #     package_name,
-        #     configuration,
-        #     execution_provider,
-        #     is_linux_build,
-        #     ort_build_dir,
-        #     nuget_exe_arg,
-        # ]
-        cmd_args = [
+        cmd_args = ["dotnet"] if use_dotnet else []
+        cmd_args += [
             "msbuild",
             "OnnxRuntime.CSharp.proj",
             target_name,
@@ -2191,7 +2178,8 @@ def build_nuget_package(
             ort_build_dir,
             nuget_exe_arg,
         ]
-        cmd_args.extend(msbuild_extra_options)
+        cmd_args += extra_options
+        
         print(" ".join(cmd_args))
         run_subprocess(cmd_args, cwd=csharp_build_dir)
 
@@ -2670,7 +2658,6 @@ def main():
                 args.use_dnnl,
                 args.use_tvm,
                 args.use_winml,
-                args.use_snpe,
                 args.use_qnn,
                 args.enable_training_apis,
                 normalize_arg_list(args.msbuild_extra_options),

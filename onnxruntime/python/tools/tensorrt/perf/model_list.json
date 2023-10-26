@@ -12,24 +12,6 @@
     "test_data_path": "./"
   },
   {
-    "model_name": "mobilenetv2-7",
-    "working_directory": "./onnx-zoo-models/mobilenetv2-7/",
-    "model_path": "./mobilenetv2-7/mobilenetv2-7.onnx",
-    "test_data_path": "./mobilenetv2-7/"
-  },
-  {
-    "model_name": "resnet18-v2-7",
-    "working_directory": "./onnx-zoo-models/resnet18-v2-7/",
-    "model_path": "./resnet18v2/resnet18-v2-7.onnx",
-    "test_data_path": "./resnet18v2/"
-  },
-  {
-    "model_name": "resnet34-v2-7",
-    "working_directory": "./onnx-zoo-models/resnet34-v2-7/",
-    "model_path": "./resnet34v2/resnet34-v2-7.onnx",
-    "test_data_path": "./resnet34v2/"
-  },
-  {
     "model_name": "squeezenet1.1-7",
     "working_directory": "./onnx-zoo-models/squeezenet1.1-7/",
     "model_path": "./squeezenet1.1/squeezenet1.1.onnx",
@@ -46,12 +28,6 @@
     "working_directory": "./onnx-zoo-models/tinyyolov2-8/",
     "model_path": "./tiny_yolov2/Model.onnx",
     "test_data_path": "./tiny_yolov2/"
-  },
-  {
-    "model_name": "emotion-ferplus-8",
-    "working_directory": "./onnx-zoo-models/emotion-ferplus-8/",
-    "model_path": "./emotion_ferplus/model.onnx",
-    "test_data_path": "./emotion_ferplus/"
   },
   {
     "model_name": "gpt2-10",

@@ -2586,11 +2586,11 @@ def main():
     # if using DML, perform initial nuget package restore
     setup_dml_build(args, cmake_path, build_dir, configs)
 
-    # if args.build:
-    #     if args.parallel < 0:
-    #         raise BuildError(f"Invalid parallel job count: {args.parallel}")
-    #     num_parallel_jobs = number_of_parallel_jobs(args)
-    #     build_targets(args, cmake_path, build_dir, configs, num_parallel_jobs, args.target)
+    if args.build:
+        if args.parallel < 0:
+            raise BuildError(f"Invalid parallel job count: {args.parallel}")
+        num_parallel_jobs = number_of_parallel_jobs(args)
+        build_targets(args, cmake_path, build_dir, configs, num_parallel_jobs, args.target)
 
     if args.test:
         if args.enable_onnx_tests:
@@ -2615,36 +2615,37 @@ def main():
     # fail unexpectedly. Similar, if your packaging step forgot to copy a file into the package, we don't know it
     # either.
     if args.build:
-        # if args.build_wheel:
-        #     nightly_build = bool(os.getenv("NIGHTLY_BUILD") == "1")
-        #     default_training_package_device = bool(os.getenv("DEFAULT_TRAINING_PACKAGE_DEVICE") == "1")
-        #     build_python_wheel(
-        #         source_dir,
-        #         build_dir,
-        #         configs,
-        #         args.use_cuda,
-        #         args.cuda_version,
-        #         args.use_rocm,
-        #         args.rocm_version,
-        #         args.use_dnnl,
-        #         args.use_tensorrt,
-        #         args.use_openvino,
-        #         args.use_tvm,
-        #         args.use_vitisai,
-        #         args.use_acl,
-        #         args.use_armnn,
-        #         args.use_dml,
-        #         args.use_cann,
-        #         args.use_azure,
-        #         args.use_qnn,
-        #         args.wheel_name_suffix,
-        #         args.enable_training,
-        #         nightly_build=nightly_build,
-        #         default_training_package_device=default_training_package_device,
-        #         use_ninja=(args.cmake_generator == "Ninja"),
-        #         enable_training_apis=args.enable_training_apis,
-        #         enable_rocm_profiling=args.enable_rocm_profiling,
-        #     )
+        if args.build_wheel:
+            nightly_build = bool(os.getenv("NIGHTLY_BUILD") == "1")
+            default_training_package_device = bool(os.getenv("DEFAULT_TRAINING_PACKAGE_DEVICE") == "1")
+            build_python_wheel(
+                source_dir,
+                build_dir,
+                configs,
+                args.use_cuda,
+                args.cuda_version,
+                args.use_rocm,
+                args.rocm_version,
+                args.use_dnnl,
+                args.use_tensorrt,
+                args.use_openvino,
+                args.use_tvm,
+                args.use_vitisai,
+                args.use_acl,
+                args.use_armnn,
+                args.use_dml,
+                args.use_cann,
+                args.use_azure,
+                args.use_qnn,
+                args.wheel_name_suffix,
+                args.enable_training,
+                nightly_build=nightly_build,
+                default_training_package_device=default_training_package_device,
+                use_ninja=(args.cmake_generator == "Ninja"),
+                enable_training_apis=args.enable_training_apis,
+                enable_rocm_profiling=args.enable_rocm_profiling,
+            )
+
         if args.build_nuget:
             build_nuget_package(
                 cmake_path,

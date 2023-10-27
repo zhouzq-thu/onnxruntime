@@ -556,7 +556,7 @@ def generate_files(line_list, args):
         files_list.append(
             "<file src="
             + '"'
-            + os.path.join(args.native_build_path, "nuget-staging/usr/local/lib", "libonnxruntime.so")
+            + os.path.join(args.native_build_path, "libonnxruntime.so")
             + '" target="runtimes\\linux-'
             + args.target_architecture
             + '\\native" />'
@@ -833,12 +833,12 @@ def generate_files(line_list, args):
             args.is_release_build.lower() != "true"
             and args.target_architecture == "x64"
             and os.path.exists(os.path.join(args.native_build_path, nuget_dependencies["onnxruntime_perf_test"]))
-        ):
+        ):            
             files_list.append(
                 "<file src="
                 + '"'
                 + os.path.join(args.native_build_path, nuget_dependencies["onnxruntime_perf_test"])
-                + runtimes
+                + runtimes[:-1] + "\\tools\\" + nuget_dependencies["onnxruntime_perf_test"] + "\""
                 + " />"
             )
 
@@ -851,7 +851,7 @@ def generate_files(line_list, args):
                 "<file src="
                 + '"'
                 + os.path.join(args.native_build_path, nuget_dependencies["onnx_test_runner"])
-                + runtimes
+                + runtimes[:-1] + "\\tools\\" + nuget_dependencies["onnx_test_runner"] + "\""
                 + " />"
             )
 
@@ -905,7 +905,6 @@ def generate_files(line_list, args):
         os.system(copy_command + " " + source_props + " " + target_props)
         files_list.append("<file src=" + '"' + target_props + '" target="build\\native" />')
         if not is_snpe_package and not is_qnn_package:
-            files_list.append("<file src=" + '"' + target_props + '" target="build\\netstandard1.1" />')
             files_list.append("<file src=" + '"' + target_props + '" target="build\\netstandard2.0" />')
 
         # Process targets file
@@ -924,7 +923,6 @@ def generate_files(line_list, args):
         os.system(copy_command + " " + source_targets + " " + target_targets)
         files_list.append("<file src=" + '"' + target_targets + '" target="build\\native" />')
         if not is_snpe_package and not is_qnn_package:
-            files_list.append("<file src=" + '"' + target_targets + '" target="build\\netstandard1.1" />')
             files_list.append("<file src=" + '"' + target_targets + '" target="build\\netstandard2.0" />')
 
         # Process xamarin targets files

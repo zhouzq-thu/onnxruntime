@@ -1,0 +1,7 @@
+<!-- csproj for use with `dotnet pack` on linux for local testing with build.py's `build_nuget` option -->
+<Project Sdk="MSBuild.Sdk.Extras/3.0.22">
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0</TargetFrameworks>
+    <NuspecFile>$(OnnxRuntimeBuildDirectory)/NativeNuget.nuspec</NuspecFile>
+  </PropertyGroup>
+</Project>

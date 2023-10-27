@@ -798,6 +798,7 @@ def run_subprocess(
 
     my_env.update(env)
 
+    print(" ".join(args))
     return run(*args, cwd=cwd, capture_stdout=capture_stdout, shell=shell, env=my_env)
 
 
@@ -2097,15 +2098,18 @@ def build_nuget_package(
         pass
     else:
         # use the solution file that includes Xamarin mobile targets
-        sln = "OnnxRuntime.CSharp.sln"
+        if "IncludeMobileTargets=false" not in msbuild_extra_options:
+            sln = "OnnxRuntime.CSharp.sln"
 
     extra_options = ["/p:" + option for option in msbuild_extra_options]
 
     # we have to use msbuild directly if including Xamarin targets as dotnet only supports MAUI (.net6)
     use_dotnet = False if is_windows() and sln == "OnnxRuntime.CSharp.sln" else True
 
-    if use_dotnet:
-        cmd_args = ["dotnet", "restore", sln, "--configfile", "NuGet.CSharp.config"]
+    # dotnet workload restore [--sdk-version 6.0.408] .\src\Microsoft.ML.OnnxRuntime\Microsoft.ML.OnnxRuntime.csproj -p:SelectedTargets=All
+
+    if use_dotnet:        
+        cmd_args = ["dotnet", "restore", sln, "--configfile", "NuGet.CSharp.config"] + extra_options
     else:
         cmd_args = ["msbuild", sln, "/t:restore", "/p:RestoreConfigFile=NuGet.CSharp.config"] + extra_options
 
@@ -2118,11 +2122,6 @@ def build_nuget_package(
 
     # build csharp bindings and create nuget package for each config
     for config in configs:
-        if is_linux():
-            native_build_dir = os.path.join(native_dir, config)
-            cmd_args = [cmake_path, "-DCMAKE_INSTALL_PREFIX=./nuget-staging/usr/local", "-Pcmake_install.cmake"]
-            run_subprocess(cmd_args, cwd=native_build_dir)
-
         configuration = "/p:Configuration=" + config
         if not use_winml:
             cmd_args = ["dotnet"] if use_dotnet else []
@@ -2131,12 +2130,10 @@ def build_nuget_package(
                 sln,
                 configuration,
                 package_name,
-                is_linux_build,
                 ort_build_dir,
                 enable_training_tests,
             ]
             cmd_args += extra_options
-            print(" ".join(cmd_args))
             run_subprocess(cmd_args, cwd=csharp_build_dir)
         else:
             winml_interop_dir = os.path.join(source_dir, "csharp", "src", "Microsoft.AI.MachineLearning.Interop")
@@ -2161,8 +2158,8 @@ def build_nuget_package(
                 # this path is setup by cmake/nuget_helpers.cmake for MSVC on Windows
                 nuget_exe = os.path.normpath(os.path.join(native_dir, config, "nuget_exe", "src", "nuget.exe"))
         else:
-            # user needs to make sure nuget is installed and can be found
-            nuget_exe = "nuget"
+            # `dotnet pack` is used on Linux
+            nuget_exe = "NugetExe unset"
 
         nuget_exe_arg = '/p:NugetExe="' + nuget_exe + '"'
 
@@ -2174,13 +2171,11 @@ def build_nuget_package(
             package_name,
             configuration,
             execution_provider,
-            is_linux_build,
             ort_build_dir,
             nuget_exe_arg,
         ]
         cmd_args += extra_options
         
-        print(" ".join(cmd_args))
         run_subprocess(cmd_args, cwd=csharp_build_dir)
 
 
@@ -2586,11 +2581,11 @@ def main():
     # if using DML, perform initial nuget package restore
     setup_dml_build(args, cmake_path, build_dir, configs)
 
-    if args.build:
-        if args.parallel < 0:
-            raise BuildError(f"Invalid parallel job count: {args.parallel}")
-        num_parallel_jobs = number_of_parallel_jobs(args)
-        build_targets(args, cmake_path, build_dir, configs, num_parallel_jobs, args.target)
+    # if args.build:
+    #     if args.parallel < 0:
+    #         raise BuildError(f"Invalid parallel job count: {args.parallel}")
+    #     num_parallel_jobs = number_of_parallel_jobs(args)
+    #     build_targets(args, cmake_path, build_dir, configs, num_parallel_jobs, args.target)
 
     if args.test:
         if args.enable_onnx_tests:
@@ -2615,36 +2610,36 @@ def main():
     # fail unexpectedly. Similar, if your packaging step forgot to copy a file into the package, we don't know it
     # either.
     if args.build:
-        if args.build_wheel:
-            nightly_build = bool(os.getenv("NIGHTLY_BUILD") == "1")
-            default_training_package_device = bool(os.getenv("DEFAULT_TRAINING_PACKAGE_DEVICE") == "1")
-            build_python_wheel(
-                source_dir,
-                build_dir,
-                configs,
-                args.use_cuda,
-                args.cuda_version,
-                args.use_rocm,
-                args.rocm_version,
-                args.use_dnnl,
-                args.use_tensorrt,
-                args.use_openvino,
-                args.use_tvm,
-                args.use_vitisai,
-                args.use_acl,
-                args.use_armnn,
-                args.use_dml,
-                args.use_cann,
-                args.use_azure,
-                args.use_qnn,
-                args.wheel_name_suffix,
-                args.enable_training,
-                nightly_build=nightly_build,
-                default_training_package_device=default_training_package_device,
-                use_ninja=(args.cmake_generator == "Ninja"),
-                enable_training_apis=args.enable_training_apis,
-                enable_rocm_profiling=args.enable_rocm_profiling,
-            )
+        # if args.build_wheel:
+        #     nightly_build = bool(os.getenv("NIGHTLY_BUILD") == "1")
+        #     default_training_package_device = bool(os.getenv("DEFAULT_TRAINING_PACKAGE_DEVICE") == "1")
+        #     build_python_wheel(
+        #         source_dir,
+        #         build_dir,
+        #         configs,
+        #         args.use_cuda,
+        #         args.cuda_version,
+        #         args.use_rocm,
+        #         args.rocm_version,
+        #         args.use_dnnl,
+        #         args.use_tensorrt,
+        #         args.use_openvino,
+        #         args.use_tvm,
+        #         args.use_vitisai,
+        #         args.use_acl,
+        #         args.use_armnn,
+        #         args.use_dml,
+        #         args.use_cann,
+        #         args.use_azure,
+        #         args.use_qnn,
+        #         args.wheel_name_suffix,
+        #         args.enable_training,
+        #         nightly_build=nightly_build,
+        #         default_training_package_device=default_training_package_device,
+        #         use_ninja=(args.cmake_generator == "Ninja"),
+        #         enable_training_apis=args.enable_training_apis,
+        #         enable_rocm_profiling=args.enable_rocm_profiling,
+        #     )
 
         if args.build_nuget:
             build_nuget_package(

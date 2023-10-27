@@ -2098,14 +2098,17 @@ def build_nuget_package(
     elif any(map(lambda x: "OrtPackageId=" in x, msbuild_extra_options)):
         pass
     else:
-        if is_windows() and have_exclude_mobile_targets_option == False:
-            # use the sln that include the mobile targets
-            sln = "OnnxRuntime.CSharp.sln"
+        if have_exclude_mobile_targets_option is False:
+            # we currently only allow building with mobile targets on Windows.
+            # it should be possible to allow building with android targets on Linux but that requires updating the
+            # csproj to separate the inclusion of ios and android targets.
+            if is_windows():
+                # use the sln that include the mobile targets
+                sln = "OnnxRuntime.CSharp.sln"
+            else:
+                msbuild_extra_options.append("IncludeMobileTargets=false")
 
-    if sln != "OnnxRuntime.CSharp.sln" and have_exclude_mobile_targets_option == False:
-        # add option so the csproj and proj files can exclude the mobile targets
-        msbuild_extra_options.append("IncludeMobileTargets=false")
-
+    # expand extra_options to add prefix
     extra_options = ["/p:" + option for option in msbuild_extra_options]
 
     # we have to use msbuild directly if including Xamarin targets as dotnet only supports MAUI (.net6)
@@ -2134,8 +2137,9 @@ def build_nuget_package(
                 package_name,
                 ort_build_dir,
                 enable_training_tests,
+                *extra_options
             ]
-            cmd_args += extra_options
+
             run_subprocess(cmd_args, cwd=csharp_build_dir)
         else:
             winml_interop_dir = os.path.join(source_dir, "csharp", "src", "Microsoft.AI.MachineLearning.Interop")
@@ -2175,12 +2179,12 @@ def build_nuget_package(
             execution_provider,
             ort_build_dir,
             nuget_exe_arg,
+            *extra_options
         ]
-        cmd_args += extra_options
 
         run_subprocess(cmd_args, cwd=csharp_build_dir)
 
-        log.info(f"Nuget package was created in {config} build output directory.")
+        log.info(f"nuget package was created in the {config} build output directory.")
 
 
 def run_csharp_tests(source_dir, build_dir, use_cuda, use_openvino, use_tensorrt, use_dnnl, enable_training_apis):

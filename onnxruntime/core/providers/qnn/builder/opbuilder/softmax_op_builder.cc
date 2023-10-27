@@ -114,7 +114,7 @@ Status SoftmaxOpBuilder::ProcessInputs(QnnModelWrapper& qnn_model_wrapper,
   std::vector<uint32_t> transpose_perm = GetTransposePermToUseLastAxis(static_cast<uint32_t>(input_rank),
                                                                        static_cast<uint32_t>(axis));
 
-  const std::string& input_name = inputs[0].node_arg.Name();
+  const std::string& input_name = qnn_model_wrapper.GetTensorName(inputs[0].node_arg.Name());
   std::string op_input_name = input_info.is_initializer ? input_name : input_name + "_ort_qnn_ep_transpose";
   input_names.push_back(op_input_name);
 

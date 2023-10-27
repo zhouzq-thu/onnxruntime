@@ -101,7 +101,7 @@ Status InstanceNormOpBuilder::ProcessInputs(QnnModelWrapper& qnn_model_wrapper,
   // QNN EP must reshape the input and output to (N, 1, W, C) and process the InstanceNorm as rank 4.
   if (IsNpuBackend(qnn_model_wrapper.GetQnnBackendType()) &&
       input0_info.shape.size() == 3 && input0_info.shape[0] != 1) {
-    const std::string& orig_input0_name = inputs[0].node_arg.Name();
+    const std::string& orig_input0_name = qnn_model_wrapper.GetTensorName(inputs[0].node_arg.Name());
     const std::string op_input0_name = input0_info.is_initializer ? orig_input0_name
                                                                   : orig_input0_name + "_ort_qnn_ep_reshape";
     input_names.push_back(op_input0_name);

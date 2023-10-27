@@ -174,7 +174,7 @@ Status ConvOpBuilder::ProcessConv2DInputs(QnnModelWrapper& qnn_model_wrapper,
   // Input 1: weight
   //
   {
-    const std::string& input1_name = inputs[1].node_arg.Name();
+    const std::string& input1_name = qnn_model_wrapper.GetTensorName(inputs[1].node_arg.Name());
     OnnxInputInfo input_info = {};
     ORT_RETURN_IF_ERROR(qnn_model_wrapper.GetOnnxInputInfo(inputs[1], input_info));
 
@@ -266,7 +266,7 @@ Status ConvOpBuilder::ProcessConv1DInputs(QnnModelWrapper& qnn_model_wrapper,
   //
 
   {
-    const std::string& input0_name = inputs[0].node_arg.Name();
+    const std::string& input0_name = qnn_model_wrapper.GetTensorName(inputs[0].node_arg.Name());
     OnnxInputInfo input0_info = {};
     ORT_RETURN_IF_ERROR(qnn_model_wrapper.GetOnnxInputInfo(inputs[0], input0_info));
 
@@ -317,7 +317,7 @@ Status ConvOpBuilder::ProcessConv1DInputs(QnnModelWrapper& qnn_model_wrapper,
   // Next, we have to transpose the weight because ORT layout transformations do not change the weight layout.
   //
   {
-    const std::string& input1_name = inputs[1].node_arg.Name();
+    const std::string& input1_name = qnn_model_wrapper.GetTensorName(inputs[1].node_arg.Name());
     OnnxInputInfo input_info = {};
     ORT_RETURN_IF_ERROR(qnn_model_wrapper.GetOnnxInputInfo(inputs[1], input_info));
 

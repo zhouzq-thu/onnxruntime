@@ -43,7 +43,7 @@ Status CastOpBuilder::ProcessInputs(QnnModelWrapper& qnn_model_wrapper,
   ORT_ENFORCE(inputs.size() == 1, "QNN Cast node must have a single input.");
   const auto& input = inputs[0];
 
-  const auto& input_name = input.node_arg.Name();
+  const auto& input_name = qnn_model_wrapper.GetTensorName(input.node_arg.Name());
 
   if (qnn_model_wrapper.IsQnnTensorWrapperExist(input_name)) {
     LOGS(logger, VERBOSE) << "Tensor already added, skip it: " << input_name;

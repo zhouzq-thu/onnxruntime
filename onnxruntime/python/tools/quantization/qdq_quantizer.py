@@ -91,6 +91,12 @@ class QDQQuantizer(ONNXQuantizer):
             else extra_options["OpTypesToExcludeOutputQuantization"]
         )
 
+        self.op_types_to_treat_bias_as_weight = (
+            []
+            if "OpTypesToTreatBiasAsWeight" not in extra_options
+            else extra_options["OpTypesToTreatBiasAsWeight"]
+        )
+
         # We do quantization on Dequantizelinear's input to remove Quantizelinear for weight as an optimization.
         # In some cases, for example QDQ BERT model for TensorRT, QDQ should always appear as a pair.
         # Therefore, we need to disable this optimization and add qdq pair to weight.

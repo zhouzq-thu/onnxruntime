@@ -91,7 +91,7 @@ Status GemmOpBuilder::ProcessInputs(QnnModelWrapper& qnn_model_wrapper,
     bool is_quantized_tensor = inputs[input_i].quant_param.has_value();
     utils::InitializeQuantizeParam(quantize_param, is_quantized_tensor);
 
-    const auto& input_name = inputs[input_i].node_arg.Name();
+    const auto& input_name = qnn_model_wrapper.GetTensorName(inputs[input_i].node_arg.Name());
     if (qnn_model_wrapper.IsQnnTensorWrapperExist(input_name)) {
       LOGS(logger, VERBOSE) << "Tensor already added, skip it: " << input_name;
       input_names.push_back(input_name);

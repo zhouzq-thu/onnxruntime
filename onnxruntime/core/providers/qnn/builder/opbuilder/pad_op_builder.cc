@@ -47,11 +47,11 @@ Status PadOpBuilder::ProcessInputs(QnnModelWrapper& qnn_model_wrapper,
     ORT_RETURN_IF_NOT(qnn_model_wrapper.GetOnnxShape(inputs[0].node_arg, input_shape), "Cannot get shape of input 0.");
     ORT_RETURN_IF(input_shape.size() > 5, "QNN Pad doesn't support more than 5 dimension");
 
-    auto& pads_input_name = inputs[1].node_arg.Name();
+    auto& pads_input_name = qnn_model_wrapper.GetTensorName(inputs[1].node_arg.Name());
     ORT_RETURN_IF_NOT(qnn_model_wrapper.IsInitializerInput(pads_input_name),
                       "Qnn doesn't support dynamic pad input");
     if (node_unit.Inputs().size() > 2) {
-      auto& constant_value_input_name = inputs[2].node_arg.Name();
+      auto& constant_value_input_name = qnn_model_wrapper.GetTensorName(inputs[2].node_arg.Name());
       ORT_RETURN_IF_NOT(qnn_model_wrapper.IsInitializerInput(constant_value_input_name),
                         "Qnn doesn't support dynamic constant_value input");
     }
@@ -185,7 +185,7 @@ Status PadOpBuilder::ProcessAttributesAndOutputs(QnnModelWrapper& qnn_model_wrap
   // Process pads input
   // Already confirmed pads input is initializer in ProcessInputs()
   const auto& inputs = node_unit.Inputs();
-  const auto& pads_input_name = inputs[1].node_arg.Name();
+  const auto& pads_input_name = qnn_model_wrapper.GetTensorName(inputs[1].node_arg.Name());
 
   std::vector<uint8_t> unpacked_tensor;
   const auto& input_tensor = qnn_model_wrapper.GetInitializerTensors().at(pads_input_name);

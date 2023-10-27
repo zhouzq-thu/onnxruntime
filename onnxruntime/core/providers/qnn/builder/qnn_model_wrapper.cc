@@ -67,6 +67,12 @@ bool QnnModelWrapper::AddTensorWrapper(QnnTensorWrapper&& tensor_wrapper) {
     return true;
   }
 
+  const bool has_been_aliased = tensor_aliases_.find(tensor_name) != tensor_aliases_.end();
+  if (has_been_aliased) {
+    LOGS(logger_, ERROR) << "Adding an aliased tensor wrapper is an error.";
+    return false;
+  }
+
   const Qnn_TensorType_t& qnn_tensor_type = tensor_wrapper.GetTensorType();
   // save created tensors for later lookup to populate graph node construction
   model_tensors_map_.emplace(tensor_name, std::move(tensor_wrapper));

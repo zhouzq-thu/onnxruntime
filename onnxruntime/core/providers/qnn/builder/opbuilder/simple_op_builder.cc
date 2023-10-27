@@ -29,7 +29,7 @@ class SimpleOpBuilder : public BaseOpBuilder {
                                      bool do_op_validation) const override ORT_MUST_USE_RESULT;
 
  private:
-  Status ExplicitOpCheck(const NodeUnit& node_unit) const;
+  Status ExplicitOpCheck(QnnModelWrapper& qnn_model_wrapper, const NodeUnit& node_unit) const;
   Status ProcessSigmoidOrTanhOutput(QnnModelWrapper& qnn_model_wrapper,
                                     const NodeUnit& node_unit,
                                     std::vector<std::string>&& input_names,
@@ -41,7 +41,8 @@ class SimpleOpBuilder : public BaseOpBuilder {
   static constexpr std::array<std::string_view, 3> gridsample_supported_padding_modes = {"zeros", "border", "reflection"};
 };
 
-Status SimpleOpBuilder::ExplicitOpCheck(const NodeUnit& node_unit) const {
+Status SimpleOpBuilder::ExplicitOpCheck(QnnModelWrapper& qnn_model_wrapper, const NodeUnit& node_unit) const {
+  ORT_UNUSED_PARAMETER(qnn_model_wrapper);
   const std::string& op_type = node_unit.OpType();
 
   if (op_type == "GridSample") {
@@ -60,6 +61,20 @@ Status SimpleOpBuilder::ExplicitOpCheck(const NodeUnit& node_unit) const {
     ORT_RETURN_IF_NOT(node_unit.Inputs().size() == 2,
                       "QNN EP only supports Min and Max operators with exactly 2 inputs.");
   }
+
+#if 0
+  if (node_unit.UnitType() == NodeUnit::Type::SingleNode) {
+    if (op_type == "QuantizeLinear") {
+      ORT_RETURN_IF(qnn_model_wrapper.IsGraphInput(node_unit.Inputs()[0].node_arg.Name()),
+                    "QNN EP DOES NOT Quantize the input!!!!!");
+    }
+
+    if (op_type == "DequantizeLinear") {
+      ORT_RETURN_IF(qnn_model_wrapper.IsGraphOutput(node_unit.Outputs()[0].node_arg.Name()),
+                    "QNN EP DOES NOT Dequantize the output!!!!!");
+    }
+  }
+#endif
 
   return Status::OK();
 }
@@ -210,7 +225,7 @@ Status SimpleOpBuilder::ProcessAttributesAndOutputs(QnnModelWrapper& qnn_model_w
   const std::string& op_type = node_unit.OpType();
 
   if (do_op_validation) {
-    ORT_RETURN_IF_ERROR(ExplicitOpCheck(node_unit));
+    ORT_RETURN_IF_ERROR(ExplicitOpCheck(qnn_model_wrapper, node_unit));
     // Skip the op validation for DepthToSpace & SpaceToDepth if it's not NHWC data layout
     if (node_unit.Domain() != kMSInternalNHWCDomain && (op_type == "DepthToSpace" || op_type == "SpaceToDepth" || op_type == "GridSample")) {
       return Status::OK();
@@ -218,7 +233,8 @@ Status SimpleOpBuilder::ProcessAttributesAndOutputs(QnnModelWrapper& qnn_model_w
 
     // Explicitly skip the Op validation for Q & DQ node with 5D because of QNN bug.
     // TODO (hecli), remove once QNN v2.17 is ready
-    if (op_type == "QuantizeLinear" || op_type == "DequantizeLinear") {
+    if (node_unit.UnitType() == NodeUnit::Type::SingleNode &&
+        (op_type == "QuantizeLinear" || op_type == "DequantizeLinear")) {
       std::vector<uint32_t> input_shape;
       ORT_RETURN_IF_NOT(qnn_model_wrapper.GetOnnxShape(node_unit.Inputs()[0].node_arg, input_shape),
                         "QNN EP: Cannot get input shape");
@@ -229,6 +245,19 @@ Status SimpleOpBuilder::ProcessAttributesAndOutputs(QnnModelWrapper& qnn_model_w
   }
 
   std::vector<std::string> param_tensor_names;
+
+  // DQ -> Q sequence is a No-Op. Make the Q node's output an alias of the DQ node's input.
+  if (op_type == "DequantizeLinear" && node_unit.UnitType() == NodeUnit::Type::QDQGroup) {
+    const std::string& input_name = node_unit.Inputs()[0].node_arg.Name();
+    const std::string& output_name = node_unit.Outputs()[0].node_arg.Name();
+    const std::string& dq_name = node_unit.Name();
+    const std::string& q_name = node_unit.GetQNodes()[0]->Name();
+    LOGS(logger, WARNING) << "QNN EP will remove the DQ -> Q sequence with DQ node " << dq_name
+                          << " and Q node " << q_name << ". Input: " << input_name << ", Output: " << output_name;
+    qnn_model_wrapper.AddTensorAlias(input_name, output_name);
+    return Status::OK();
+  }
+
   // Add attribute
   if (op_type == "Concat") {
     int32_t default_axis = 0;

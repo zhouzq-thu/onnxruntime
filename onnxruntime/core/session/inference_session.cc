@@ -1036,7 +1036,7 @@ common::Status InferenceSession::TransformGraph(onnxruntime::Graph& graph, bool 
       // a QDQ format model. The transpose optimizer can now look past DQ nodes to directly update initializers which
       // takes care of most models without needing this.
       //
-      #if 1
+      #if 0
       if (modified) {
         ORT_RETURN_IF_ERROR_SESSIONID_(
             graph_transformer_mgr_.ApplyTransformers(graph_to_transform, TransformerLevel::Level1, *session_logger_));

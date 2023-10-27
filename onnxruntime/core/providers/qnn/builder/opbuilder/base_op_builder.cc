@@ -48,7 +48,7 @@ Status BaseOpBuilder::ProcessInput(QnnModelWrapper& qnn_model_wrapper,
                                    const NodeUnitIODef& input,
                                    const logging::Logger& logger,
                                    std::vector<std::string>& input_names) const {
-  const auto& input_name = input.node_arg.Name();
+  const auto& input_name = qnn_model_wrapper.GetTensorName(input.node_arg.Name());
 
   if (qnn_model_wrapper.IsQnnTensorWrapperExist(input_name)) {
     LOGS(logger, VERBOSE) << "Tensor already added, skip it: " << input_name;

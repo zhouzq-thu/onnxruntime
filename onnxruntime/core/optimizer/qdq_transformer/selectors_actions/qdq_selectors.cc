@@ -281,7 +281,9 @@ bool ConvNodeGroupSelector::Check(const GraphViewer& graph_viewer,
 
   if (dq_nodes.size() == 3) {  // has bias
     int32_t dt_bias = dq_nodes[2]->InputDefs()[0]->TypeAsProto()->tensor_type().elem_type();
-    if (dt_bias != ONNX_NAMESPACE::TensorProto_DataType::TensorProto_DataType_INT32) {
+    bool valid_bias_type = (dt_bias == ONNX_NAMESPACE::TensorProto_DataType::TensorProto_DataType_INT32) ||
+        (allow_uint8_bias_ && dt_bias == ONNX_NAMESPACE::TensorProto_DataType::TensorProto_DataType_UINT8);
+    if (!valid_bias_type) {
       return false;
     }
   }

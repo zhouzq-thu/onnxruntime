@@ -128,7 +128,7 @@ Status ReduceOpBuilder::GetAxesSet(QnnModelWrapper& qnn_model_wrapper, const Nod
 
     // Empty axes means to use default axes (when noop_with_empty_axes is 0).
     if (axes_shape[0] > 0) {
-      const std::string& axes_input_name = inputs[1].node_arg.Name();
+      const std::string& axes_input_name = qnn_model_wrapper.GetTensorName(inputs[1].node_arg.Name());
 
       // Check that the axes input is an initializer.
       if (!qnn_model_wrapper.IsInitializerInput(axes_input_name)) {

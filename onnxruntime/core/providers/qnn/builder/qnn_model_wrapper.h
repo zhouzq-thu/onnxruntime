@@ -90,6 +90,32 @@ class QnnModelWrapper {
     return std::move(model_output_tensor_wrappers_);
   }
 
+  const std::string& GetTensorName(const std::string& tensor_name) const {
+    if (tensor_aliases_.find(tensor_name) != tensor_aliases_.end()) {
+      return tensor_aliases_.at(tensor_name);  // Return the tensor's alias.
+    }
+
+    return tensor_name;  // This tensor is not aliased.
+  }
+
+  bool AddTensorAlias(const std::string& orig_name, const std::string& alias_name) {
+    const std::string& actual_name = GetTensorName(orig_name);
+    const bool has_been_aliased = tensor_aliases_.find(alias_name) != tensor_aliases_.end();
+
+    // If already been aliased to the same tensor, return true.
+    if (has_been_aliased && actual_name == tensor_aliases_.at(alias_name)) {
+      return true;
+    }
+
+    // Has already been aliased to something else!
+    if (has_been_aliased && actual_name != tensor_aliases_.at(alias_name)) {
+      return false;
+    }
+
+    tensor_aliases_[alias_name] = actual_name;
+    return true;
+  }
+
   const InitializedTensorSet& GetInitializerTensors() const { return graph_viewer_.GetAllInitializedTensors(); }
 
   bool IsInitializerInput(std::string input_name) const {
@@ -245,6 +271,7 @@ class QnnModelWrapper {
   const std::vector<uint32_t> nchw2hwcn_perm_{2, 3, 1, 0};
   const std::vector<uint32_t> cnhw2hwcn_perm_{2, 3, 0, 1};
   QnnBackendType qnn_backend_type_ = QnnBackendType::CPU;
+  std::unordered_map<std::string, std::string> tensor_aliases_;
 };  // QnnModelWrapper
 
 }  // namespace qnn

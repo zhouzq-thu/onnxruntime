@@ -43,7 +43,7 @@ Status GatherOpBuilder::ProcessInputs(QnnModelWrapper& qnn_model_wrapper,
   ORT_RETURN_IF_ERROR(ProcessInput(qnn_model_wrapper, inputs[0], logger, input_names));
 
   // Process indices
-  const auto& input_name = inputs[1].node_arg.Name();
+  const auto& input_name = qnn_model_wrapper.GetTensorName(inputs[1].node_arg.Name());
   if (qnn_model_wrapper.IsQnnTensorWrapperExist(input_name)) {
     LOGS(logger, VERBOSE) << "Tensor already added, skip it: " << input_name;
     input_names.push_back(input_name);

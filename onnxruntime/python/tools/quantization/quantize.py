@@ -122,6 +122,9 @@ class StaticQuantConfig(QuantConfig):
                     OpTypesToExcludeOutputQuantization = list of op type :
                         Default is []. If any op type is specified, it won't quantize the output of ops with this
                         specific op types.
+                    OpTypesToTreatBiasAsWeight = list of op type :
+                        Default is []. If any op type is specified, it's bias will be quantized as a weight
+                        (i.e., bias will not be quantized as int32 with zp == 0 and scale == input_scale * weight_scale)
                     DedicatedQDQPair = True/False :
                         Default is False. When inserting QDQ pair, multiple nodes can share a single QDQ pair as their
                         inputs. If True, it will create identical and dedicated QDQ pair for each node.
@@ -333,6 +336,9 @@ def quantize_static(
                 OpTypesToExcludeOutputQuantization = list of op type :
                     Default is []. If any op type is specified, it won't quantize the output of ops with this
                     specific op types.
+                OpTypesToTreatBiasAsWeight = list of op type :
+                    Default is []. If any op type is specified, it's bias will be quantized as a weight
+                    (i.e., bias will not be quantized as int32 with zp == 0 and scale == input_scale * weight_scale)
                 DedicatedQDQPair = True/False :
                     Default is False. When inserting QDQ pair, multiple nodes can share a single QDQ pair as their
                     inputs. If True, it will create identical and dedicated QDQ pair for each node.

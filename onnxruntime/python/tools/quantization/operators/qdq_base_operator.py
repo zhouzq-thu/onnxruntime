@@ -9,6 +9,7 @@ class QDQOperatorBase:
         self.quantizer = onnx_quantizer
         self.node = onnx_node
         self.disable_qdq_for_node_output = onnx_node.op_type in onnx_quantizer.op_types_to_exclude_output_quantization
+        self.treat_bias_as_weight = onnx_node.op_type in onnx_quantizer.op_types_to_treat_bias_as_weight
 
     def quantize(self):
         node = self.node

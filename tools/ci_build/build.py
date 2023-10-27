@@ -798,7 +798,7 @@ def run_subprocess(
 
     my_env.update(env)
 
-    print(" ".join(args))
+    log.info(" ".join(args))
     return run(*args, cwd=cwd, capture_stdout=capture_stdout, shell=shell, env=my_env)
 
 
@@ -2054,18 +2054,19 @@ def build_nuget_package(
         )
 
     csharp_build_dir = os.path.join(source_dir, "csharp")
-    "/p:IsLinuxBuild=" + ("true" if is_linux() else "false")
 
     # in most cases we don't want/need to include the Xamarin mobile targets, as doing so means the Xamarin
     # mobile workloads must be installed on the machine.
     # they are only included in the Microsoft.ML.OnnxRuntime nuget package
     sln = "OnnxRuntime.DesktopOnly.CSharp.sln"
+    have_exclude_mobile_targets_option = "IncludeMobileTargets=false" in msbuild_extra_options
 
     # derive package name and execution provider based on the build args
     target_name = "/t:CreatePackage"
     execution_provider = "/p:ExecutionProvider=None"
     package_name = "/p:OrtPackageId=Microsoft.ML.OnnxRuntime"
     enable_training_tests = "/p:TrainingEnabledNativeBuild=false"
+
     if enable_training_apis:
         enable_training_tests = "/p:TrainingEnabledNativeBuild=true"
         if use_cuda:
@@ -2097,9 +2098,13 @@ def build_nuget_package(
     elif any(map(lambda x: "OrtPackageId=" in x, msbuild_extra_options)):
         pass
     else:
-        # use the solution file that includes Xamarin mobile targets
-        if "IncludeMobileTargets=false" not in msbuild_extra_options:
+        if is_windows() and have_exclude_mobile_targets_option == False:
+            # use the sln that include the mobile targets
             sln = "OnnxRuntime.CSharp.sln"
+
+    if sln != "OnnxRuntime.CSharp.sln" and have_exclude_mobile_targets_option == False:
+        # add option so the csproj and proj files can exclude the mobile targets
+        msbuild_extra_options.append("IncludeMobileTargets=false")
 
     extra_options = ["/p:" + option for option in msbuild_extra_options]
 
@@ -2113,7 +2118,6 @@ def build_nuget_package(
 
     # set build directory based on build_dir arg
     native_dir = os.path.normpath(os.path.join(source_dir, build_dir))
-    # TODO: Does this need to be quoted if there are spaces in the dir? Breaks if quoted and there are not.
     ort_build_dir = "/p:OnnxRuntimeBuildDirectory=" + native_dir
 
     run_subprocess(cmd_args, cwd=csharp_build_dir)
@@ -2175,6 +2179,8 @@ def build_nuget_package(
         cmd_args += extra_options
 
         run_subprocess(cmd_args, cwd=csharp_build_dir)
+
+        log.info(f"Nuget package was created in {config} build output directory.")
 
 
 def run_csharp_tests(source_dir, build_dir, use_cuda, use_openvino, use_tensorrt, use_dnnl, enable_training_apis):

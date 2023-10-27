@@ -833,12 +833,15 @@ def generate_files(line_list, args):
             args.is_release_build.lower() != "true"
             and args.target_architecture == "x64"
             and os.path.exists(os.path.join(args.native_build_path, nuget_dependencies["onnxruntime_perf_test"]))
-        ):            
+        ):
             files_list.append(
                 "<file src="
                 + '"'
                 + os.path.join(args.native_build_path, nuget_dependencies["onnxruntime_perf_test"])
-                + runtimes[:-1] + "\\tools\\" + nuget_dependencies["onnxruntime_perf_test"] + "\""
+                + runtimes[:-1]
+                + "\\tools\\"
+                + nuget_dependencies["onnxruntime_perf_test"]
+                + '"'
                 + " />"
             )
 
@@ -851,7 +854,10 @@ def generate_files(line_list, args):
                 "<file src="
                 + '"'
                 + os.path.join(args.native_build_path, nuget_dependencies["onnx_test_runner"])
-                + runtimes[:-1] + "\\tools\\" + nuget_dependencies["onnx_test_runner"] + "\""
+                + runtimes[:-1]
+                + "\\tools\\"
+                + nuget_dependencies["onnx_test_runner"]
+                + '"'
                 + " />"
             )
 

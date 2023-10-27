@@ -21,7 +21,7 @@ CMake creates a target to this project
     <IsLinuxBuild Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' == 'true'">true</IsLinuxBuild>
     <ExecutionProvider Condition=" '$(ExecutionProvider)' == '' ">None</ExecutionProvider>
 
-    <!-- include Xamarin/MAUI Android and iOS target frameworks? -->
+    <!-- include Xamarin/MAUI Android and iOS target frameworks? Command line property overrides this value. -->
     <IncludeMobileTargets>true</IncludeMobileTargets>
 
     <!--internal build related properties-->

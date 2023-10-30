@@ -89,7 +89,12 @@ TRT_ENGINE_CACHE_DIR_NAME = "engine_cache"
 
 def split_and_sort_output(string_list):
     string_list = string_list.split("\n")
-    string_list.sort()
+    
+    def custom_sort(item):
+        # Extract the number from the string and convert to int
+        return int(item.split("_")[1].split(".")[0])
+    
+    string_list.sort(key=custom_sort)
     return string_list
 
 

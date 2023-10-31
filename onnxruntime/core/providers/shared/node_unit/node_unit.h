@@ -89,6 +89,6 @@ class NodeUnit {
 // And return a map to quick query the NodeUnit which contains the given Node,
 // Note, the value of the map is owned by the vector of std::unique_ptr<NodeUnit>
 std::pair<std::vector<std::unique_ptr<NodeUnit>>, std::unordered_map<const Node*, const NodeUnit*>>
-GetAllNodeUnits(const GraphViewer& graph_viewer, bool group_dq_q_sequence = false);
+GetAllNodeUnits(const GraphViewer& graph_viewer);
 
 }  // namespace onnxruntime

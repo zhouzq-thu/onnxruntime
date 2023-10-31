@@ -246,18 +246,6 @@ Status SimpleOpBuilder::ProcessAttributesAndOutputs(QnnModelWrapper& qnn_model_w
 
   std::vector<std::string> param_tensor_names;
 
-  // DQ -> Q sequence is a No-Op. Make the Q node's output an alias of the DQ node's input.
-  if (op_type == "DequantizeLinear" && node_unit.UnitType() == NodeUnit::Type::QDQGroup) {
-    const std::string& input_name = node_unit.Inputs()[0].node_arg.Name();
-    const std::string& output_name = node_unit.Outputs()[0].node_arg.Name();
-    const std::string& dq_name = node_unit.Name();
-    const std::string& q_name = node_unit.GetQNodes()[0]->Name();
-    LOGS(logger, WARNING) << "QNN EP will remove the DQ -> Q sequence with DQ node " << dq_name
-                          << " and Q node " << q_name << ". Input: " << input_name << ", Output: " << output_name;
-    qnn_model_wrapper.AddTensorAlias(input_name, output_name);
-    return Status::OK();
-  }
-
   // Add attribute
   if (op_type == "Concat") {
     int32_t default_axis = 0;

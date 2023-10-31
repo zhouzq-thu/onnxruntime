@@ -274,7 +274,7 @@ std::vector<const Node*> NodeUnit::GetAllNodesInGroup() const noexcept {
 }
 
 std::pair<std::vector<std::unique_ptr<NodeUnit>>, std::unordered_map<const Node*, const NodeUnit*>>
-GetAllNodeUnits(const GraphViewer& graph_viewer, bool group_dq_q_sequence) {
+GetAllNodeUnits(const GraphViewer& graph_viewer) {
   std::vector<std::unique_ptr<NodeUnit>> node_unit_holder;
   std::unordered_map<const Node*, const NodeUnit*> node_unit_map;
 
@@ -300,68 +300,18 @@ GetAllNodeUnits(const GraphViewer& graph_viewer, bool group_dq_q_sequence) {
     node_unit_holder.push_back(std::move(qdq_unit));
   }
 
-  // Get leftover DQ -> Q sequences
-  if (group_dq_q_sequence) {
-    auto get_const_initializer = [&graph_viewer](const std::string& initializer_name) {
-      return graph_viewer.GetConstantInitializer(initializer_name, true);
-    };
-
-    const auto& node_indices = graph_viewer.GetNodesInTopologicalOrder();
-    for (const auto node_idx : node_indices) {
-      const auto* node(graph_viewer.GetNode(node_idx));
-
-      // This is already part of a QDQ NodeUnit
-      if (node_unit_map.find(node) != node_unit_map.cend())
-        continue;
-
-      // Looking for a DQ to start the sequence.
-      if (node->OpType() != QDQ::DQOpName) {
-        continue;
-      }
-
-      const Node& dq_node = *node;
-
-      // Must have one Q child node.
-      auto children = graph_utils::FindChildrenByType(*node, QDQ::QOpName);
-      if (children.size() != 1 || dq_node.GetOutputEdgesCount() != 1 || graph_viewer.NodeProducesGraphOutput(dq_node)) {
-        continue;
-      }
-
-      const Node& q_node = *children[0];
-
-      // DQ and Q must have constant, scalar, and equal zero-point/scale.
-      if (!QDQ::IsQDQPairSupported(q_node, dq_node, get_const_initializer, graph_viewer.ModelPath())) {
-        continue;
-      }
-
-      QDQ::NodeGroup group;
-      group.target_node = dq_node.Index();
-      group.q_nodes.push_back(q_node.Index());
-
-      auto qdq_unit = std::make_unique<NodeUnit>(graph_viewer, group);
-
-      // Fill the node to node_unit map for all nodes in the QDQ Group
-      add_node_unit_to_map(group.q_nodes, qdq_unit.get());
-      add_node_unit_to_map({group.target_node}, qdq_unit.get());
-
-      node_unit_holder.push_back(std::move(qdq_unit));
-    }
-  }
-
   // Get the left over SingleNode NodeUnits
-  {
-    const auto& node_indices = graph_viewer.GetNodesInTopologicalOrder();
-    for (const auto node_idx : node_indices) {
-      const auto* node(graph_viewer.GetNode(node_idx));
+  const auto& node_indices = graph_viewer.GetNodesInTopologicalOrder();
+  for (const auto node_idx : node_indices) {
+    const auto* node(graph_viewer.GetNode(node_idx));
 
-      // This is already part of a QDQ NodeUnit
-      if (node_unit_map.find(node) != node_unit_map.cend())
-        continue;
+    // This is already part of a QDQ NodeUnit
+    if (node_unit_map.find(node) != node_unit_map.cend())
+      continue;
 
-      auto node_unit = std::make_unique<NodeUnit>(*node);
-      node_unit_map[node] = node_unit.get();
-      node_unit_holder.push_back(std::move(node_unit));
-    }
+    auto node_unit = std::make_unique<NodeUnit>(*node);
+    node_unit_map[node] = node_unit.get();
+    node_unit_holder.push_back(std::move(node_unit));
   }
 
   return std::make_pair(std::move(node_unit_holder), std::move(node_unit_map));

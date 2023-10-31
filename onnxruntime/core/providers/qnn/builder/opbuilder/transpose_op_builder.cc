@@ -87,6 +87,9 @@ Status TransposeOpBuilder::ProcessAttributesAndOutputs(QnnModelWrapper& qnn_mode
                     "Cannot get shape");
 
   const QnnTensorWrapper& input_tensor_wrapper = qnn_model_wrapper.GetQnnTensorWrapper(input_names[0]);
+  //const auto& act_input = node_unit.Inputs()[0];
+  //OnnxInputInfo input_info = {};
+  //ORT_RETURN_IF_ERROR(qnn_model_wrapper.GetOnnxInputInfo(act_input, input_info));
 
   // Transpose output uses same data type and quantization parameter with input
   // 1. In QDQ model, the optimization may create scenario like Q -> Transpose -> DQ, Transpose is single node
@@ -95,7 +98,9 @@ Status TransposeOpBuilder::ProcessAttributesAndOutputs(QnnModelWrapper& qnn_mode
   // 2. In QDQ model, Transpose also support non-quantized data like int32.
   QnnTensorWrapper output_tensorwrapper(output_name,
                                         tensor_type,
+                                        //input_info.qnn_data_type,
                                         input_tensor_wrapper.GetTensorDataType(),
+                                        //input_info.quant_param,
                                         GetQnnTensorQParams(input_tensor_wrapper.GetQnnTensor()),
                                         std::move(output_shape));
 

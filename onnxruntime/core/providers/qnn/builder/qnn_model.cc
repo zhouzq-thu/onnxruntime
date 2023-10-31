@@ -9,6 +9,8 @@
 #include "QnnOpDef.h"
 #include "HTP/QnnHtpGraph.h"
 
+#include "core/graph/graph_utils.h"
+#include "core/optimizer/qdq_transformer/qdq_util.h"
 #include "core/providers/qnn/builder/op_builder_factory.h"
 #include "core/providers/shared/utils/utils.h"
 #include "core/framework/utils.h"
@@ -98,7 +100,7 @@ Status QnnModel::ComposeGraph(const GraphViewer& graph_viewer,
   // valid throughout the lifetime of the ModelBuilder
   std::vector<std::unique_ptr<NodeUnit>> node_unit_holder;
   std::unordered_map<const Node*, const NodeUnit*> node_unit_map;
-  std::tie(node_unit_holder, node_unit_map) = GetAllNodeUnits(graph_viewer, true);
+  std::tie(node_unit_holder, node_unit_map) = GetAllNodeUnits(graph_viewer);
 
   const auto& graph_name = graph_viewer.Name();
   ORT_RETURN_IF_ERROR(SetGraphInputOutputInfo(graph_viewer, fused_node));
@@ -141,6 +143,94 @@ Status QnnModel::ComposeGraph(const GraphViewer& graph_viewer,
     }
   }
 
+  auto get_const_initializer = [&graph_viewer](const std::string& initializer_name) {
+    return graph_viewer.GetConstantInitializer(initializer_name, true);
+  };
+
+  std::unordered_set<const NodeUnit*> handled_node_units;
+
+  auto handle_dq_q_sequence = [&](const NodeUnit& node_unit) -> bool {
+    // Looking for a standalone DQ to start the sequence.
+    if (node_unit.OpType() != QDQ::DQOpName || node_unit.UnitType() != NodeUnit::Type::SingleNode) {
+      return false;
+    }
+
+    const Node& dq_node = node_unit.GetNode();
+
+    // Must have a single Q child.
+    auto children = graph_utils::FindChildrenByType(dq_node, QDQ::QOpName);
+    if (children.size() != 1 || dq_node.GetOutputEdgesCount() != 1 || graph_viewer.NodeProducesGraphOutput(dq_node)) {
+      return false;
+    }
+
+    const Node& q_node = *children[0];
+    const NodeUnit& q_node_unit = GetNodeUnit(&q_node, node_unit_map);
+
+    // Q child must not already be part of a QDQ NodeUnit (i.e., be standalone).
+    if (q_node_unit.UnitType() != NodeUnit::Type::SingleNode) {
+      return false;
+    }
+
+    assert(handled_node_units.count(&q_node_unit) == 0);
+
+    // DQ and Q must have equal zero-point/scale, which must also be constant and scalar.
+    if (!QDQ::IsQDQPairSupported(q_node, dq_node, get_const_initializer, graph_viewer.ModelPath())) {
+      return false;
+    }
+
+    const NodeUnitIODef& dq_input = node_unit.Inputs()[0];
+    const auto& dq_input_name = qnn_model_wrapper.GetTensorName(dq_input.node_arg.Name());
+
+    const NodeUnitIODef& q_output = q_node_unit.Outputs()[0];
+    const std::string& q_output_name = q_output.node_arg.Name();
+
+    const bool from_graph_input = qnn_model_wrapper.IsGraphInput(dq_input_name);
+    const bool to_graph_output = qnn_model_wrapper.IsGraphOutput(q_output_name);
+
+    // Don't simplify if it requires shorting the input to the output. Ex: input -> DQ -> Q -> output
+    if (from_graph_input && to_graph_output) {
+      return false;
+    }
+
+    if (!qnn_model_wrapper.IsQnnTensorWrapperExist(dq_input_name)) {
+      // Add the DQ input to the model wrapper.
+      OnnxInputInfo dq_input_info = {};
+      auto status = qnn_model_wrapper.GetOnnxInputInfo(dq_input, dq_input_info);
+
+      ORT_ENFORCE(status.IsOK());
+      ORT_ENFORCE(!dq_input_info.is_initializer);
+
+      Qnn_TensorType_t tensor_type = from_graph_input ? QNN_TENSOR_TYPE_APP_WRITE
+                                                      : (to_graph_output ? QNN_TENSOR_TYPE_APP_READ : QNN_TENSOR_TYPE_NATIVE);
+      QnnTensorWrapper input_tensorwrapper(dq_input_name, tensor_type, dq_input_info.qnn_data_type, dq_input_info.quant_param,
+                                           std::move(dq_input_info.shape), {});
+      bool added_tensor = qnn_model_wrapper.AddTensorWrapper(std::move(input_tensorwrapper));
+      ORT_ENFORCE(added_tensor);
+    } else if (to_graph_output) {
+      bool success = qnn_model_wrapper.OverrideTensorType(dq_input_name, QNN_TENSOR_TYPE_APP_READ);
+      ORT_ENFORCE(success);
+
+      const auto& orig_output_info = outputs_info_.at(q_output_name);
+      outputs_info_.emplace(std::piecewise_construct, std::forward_as_tuple(dq_input_name),
+                            std::forward_as_tuple(orig_output_info.index_, orig_output_info.data_type_,
+                                                  std::vector<int64_t>(orig_output_info.shape_)));
+      outputs_info_.erase(q_output_name);
+    }
+
+    // Alias the Q output to the DQ input.
+    LOGS(logger_, WARNING) << "QNN EP will remove the DQ -> Q sequence with DQ node " << dq_node.Name()
+                           << " and Q node " << q_node.Name() << ". Input: " << dq_input_name
+                           << ", Output: " << q_output_name;
+    bool alias_result = qnn_model_wrapper.AddTensorAlias(dq_input_name, q_output_name);
+    ORT_ENFORCE(alias_result);
+
+    // Add DQ and Q to the handled set.
+    handled_node_units.insert(&node_unit);
+    handled_node_units.insert(&q_node_unit);
+
+    return true;
+  };
+
   // Op builer
   const auto& node_indices = graph_viewer.GetNodesInTopologicalOrder(ExecutionOrder::PRIORITY_BASED);  // Inputs first
   for (size_t i = 0; i < node_indices.size(); i++) {
@@ -155,6 +245,15 @@ Status QnnModel::ComposeGraph(const GraphViewer& graph_viewer,
       continue;
     }
 
+    if (handled_node_units.count(&node_unit) != 0) {
+      continue;  // Already handled.
+    }
+
+    // Optimize away DQ -> Q sequences.
+    if (handle_dq_q_sequence(node_unit)) {
+      continue;
+    }
+
     LOGS(logger_, WARNING) << " node name: [" << node->Name()
                            << "] node optype: [" << op_type
                            << "] as part of the NodeUnit type: [" << node_unit.OpType()
@@ -164,6 +263,8 @@ Status QnnModel::ComposeGraph(const GraphViewer& graph_viewer,
     if (const auto* op_builder = GetOpBuilder(op_type)) {
       ORT_RETURN_IF_ERROR(op_builder->AddToModelBuilder(qnn_model_wrapper, node_unit, logger_));
     }
+
+    handled_node_units.insert(&node_unit);
   }
 
   const bool build_debug_json_graph = !debug_json_graph_path.empty();

@@ -186,6 +186,7 @@ class QnnTensorWrapper {
   const std::string& GetName() const { return tensor_name_; }
 
   Qnn_TensorType_t GetTensorType() const { return GetQnnTensorType(qnn_tensor_); }
+  void SetTensorType(Qnn_TensorType_t new_type) { SetQnnTensorType(qnn_tensor_, new_type); }
   Qnn_DataType_t GetTensorDataType() const { return GetQnnTensorDataType(qnn_tensor_); }
   uint32_t GetTensorRank() const { return static_cast<uint32_t>(dimensions_.size()); }
   const std::vector<uint32_t>& GetTensorDims() const { return dimensions_; }

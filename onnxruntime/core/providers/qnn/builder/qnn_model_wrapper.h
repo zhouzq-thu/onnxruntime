@@ -58,6 +58,7 @@ class QnnModelWrapper {
 
   // Add to internal tensor wrapper table
   bool AddTensorWrapper(QnnTensorWrapper&& tensor_wrapper);
+  bool OverrideTensorType(const std::string& tensor_name, Qnn_TensorType_t new_type);
 
   // Add to internal param wrapper table
   bool AddParamWrapper(QnnParamWrapper&& param_wrapper);

@@ -88,6 +88,51 @@ bool QnnModelWrapper::AddTensorWrapper(QnnTensorWrapper&& tensor_wrapper) {
   return true;
 }
 
+bool QnnModelWrapper::OverrideTensorType(const std::string& tensor_name, Qnn_TensorType_t new_type) {
+  auto it = model_tensors_map_.find(tensor_name);
+  if (it == model_tensors_map_.end()) {
+    return false;
+  }
+
+  QnnTensorWrapper& tensor_wrapper = it->second;
+  Qnn_TensorType_t old_type = tensor_wrapper.GetTensorType();
+
+  if (old_type == new_type) {
+    return true;
+  }
+
+  auto remove_from_vector = [](std::vector<std::string> names, const std::string& name) -> bool {
+    for (auto it = names.begin(); it != names.end(); ++it) {
+      if (*it == name) {
+        names.erase(it);
+        return true;
+      }
+    }
+    return false;
+  };
+
+  if (old_type == QNN_TENSOR_TYPE_APP_WRITE) {
+    // Remove from model_input_names_
+    bool removed = remove_from_vector(model_input_names_, tensor_name);
+    ORT_ENFORCE(removed);
+  } else if (old_type == QNN_TENSOR_TYPE_APP_READ) {
+    // Remove from model_output_names_
+    bool removed = remove_from_vector(model_output_names_, tensor_name);
+    ORT_ENFORCE(removed);
+  }
+
+  if (new_type == QNN_TENSOR_TYPE_APP_WRITE) {
+    // Add to model_input_names_
+    model_input_names_.push_back(tensor_name);
+  } else if (new_type == QNN_TENSOR_TYPE_APP_READ) {
+    // Add to model_output_names_
+    model_output_names_.push_back(tensor_name);
+  }
+
+  tensor_wrapper.SetTensorType(new_type);
+  return true;
+}
+
 bool QnnModelWrapper::AddParamWrapper(QnnParamWrapper&& param_wrapper) {
   // Keep a copy of tensor name sine it will be moved with the wrapper into model_params_map_
   std::string param_tensor_name = param_wrapper.GetParamTensorName();
@@ -108,6 +153,11 @@ bool QnnModelWrapper::AddParamWrapper(QnnParamWrapper&& param_wrapper) {
 
 const QnnTensorWrapper& QnnModelWrapper::GetQnnTensorWrapper(const std::string& tensor_name) {
   auto map_iter = model_tensors_map_.find(tensor_name);
+  if (map_iter != model_tensors_map_.end()) {
+    return (map_iter->second);
+  }
+
+  map_iter = model_tensors_map_.find(GetTensorName(tensor_name));
   if (map_iter != model_tensors_map_.end()) {
     return (map_iter->second);
   }
@@ -377,7 +427,7 @@ bool QnnModelWrapper::ProcessQuantizationParameter(const std::optional<NodeUnitI
 
 Status QnnModelWrapper::GetOnnxInputInfo(const NodeUnitIODef& input,
                                          OnnxInputInfo& input_info) const {
-  const std::string& name = input.node_arg.Name();
+  const std::string& name = GetTensorName(input.node_arg.Name());
 
   // Fill in quantization param info.
   input_info.quant_param = QNN_QUANTIZE_PARAMS_INIT;

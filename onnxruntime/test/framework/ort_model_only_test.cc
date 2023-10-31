@@ -23,8 +23,6 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
-#include "test/providers/internal_testing/internal_testing_execution_provider.h"
-
 using namespace ONNX_NAMESPACE;
 
 namespace onnxruntime {
@@ -658,19 +656,5 @@ TEST(OrtModelOnlyTests, LoadOrtFormatModelMLOpsFromBufferNoCopy) {
 
 #endif  // !defined(DISABLE_ML_OPS)
 
-TEST(TempTest, LoadModel) {
-  SessionOptions so;
-  so.session_logid = "TempTest.LoadModel";
-  ASSERT_STATUS_OK(so.config_options.AddConfigEntry(kDebugLayoutTransformation, "1"));
-
-  auto test_ep = new internal_testing_ep::InternalTestingExecutionProvider({}, {}, DataLayout::NHWC);
-  test_ep->TakeAllNodes();
-
-  InferenceSession session{so, GetEnvironment()};
-  ASSERT_STATUS_OK(session.RegisterExecutionProvider(std::shared_ptr<IExecutionProvider>(test_ep)));
-
-  ASSERT_STATUS_OK(session.Load(ORT_TSTR("C:/Users/scmckay/Downloads/stable_diffusion_2_1_base.ssi.onnx")));
-  ASSERT_STATUS_OK(session.Initialize());  // optimizers run during initialization
-}
 }  // namespace test
 }  // namespace onnxruntime

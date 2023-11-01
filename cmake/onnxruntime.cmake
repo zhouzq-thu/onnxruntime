@@ -284,6 +284,7 @@ endif()
 if(onnxruntime_BUILD_APPLE_FRAMEWORK)
   set(STATIC_LIB_DIR ${CMAKE_CURRENT_BINARY_DIR}/static_libraries)
   file(MAKE_DIRECTORY ${STATIC_LIB_DIR})
+  file(MAKE_DIRECTORY ${STATIC_LIB_DIR}/temp)
 
   # Remove the existing files in the STATIC_LIB_DIR folder
   file(GLOB _OLD_STATIC_LIBS ${STATIC_LIB_DIR}/*.a)
@@ -293,7 +294,12 @@ if(onnxruntime_BUILD_APPLE_FRAMEWORK)
   foreach(_LIB ${onnxruntime_INTERNAL_LIBRARIES} ${onnxruntime_EXTERNAL_LIBRARIES})
     GET_TARGET_PROPERTY(_LIB_TYPE ${_LIB} TYPE)
     if(_LIB_TYPE STREQUAL "STATIC_LIBRARY")
-      add_custom_command(TARGET onnxruntime POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE:${_LIB}> ${STATIC_LIB_DIR}/$<TARGET_LINKER_FILE_NAME:${_LIB}>)
+      set(_LIB_TARGET_FILE_NAME $<TARGET_LINKER_FILE_NAME:${_LIB}>)
+      add_custom_command(TARGET onnxruntime POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE:${_LIB}> ${STATIC_LIB_DIR}/temp/${_LIB_TARGET_FILE_NAME})
+      # extract, pre-link with `ld -r` to hide symbols, and repack into static library
+      add_custom_command(TARGET onnxruntime POST_BUILD COMMAND ar ARGS -x $<TARGET_LINKER_FILE_NAME:${_LIB}> WORKING_DIRECTORY ${STATIC_LIB_DIR}/temp)
+      add_custom_command(TARGET onnxruntime POST_BUILD COMMAND ld ARGS -r -o ${STATIC_LIB_DIR}/${_LIB_TARGET_FILE_NAME} *.o WORKING_DIRECTORY ${STATIC_LIB_DIR}/temp)
+      add_custom_command(TARGET onnxruntime POST_BUILD COMMAND rm ARGS * WORKING_DIRECTORY ${STATIC_LIB_DIR}/temp)
     endif()
   endforeach()
 

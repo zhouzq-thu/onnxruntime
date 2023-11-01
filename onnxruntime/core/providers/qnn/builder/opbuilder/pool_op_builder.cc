@@ -92,6 +92,8 @@ Status PoolOpBuilder::SetCommonPoolParams(const NodeAttrHelper& node_helper,
                                           int32_t& ceil_mode,
                                           std::vector<uint32_t>&& input_shape,
                                           std::vector<uint32_t>&& output_shape) const {
+  ceil_mode = node_helper.Get("ceil_mode", ceil_mode);
+
   filter_size = node_helper.Get("kernel_shape", std::vector<uint32_t>{1, 1});
   ORT_RETURN_IF_NOT(filter_size.size() == 2, "QNN only support kernel_shape with shape[2].");
 
@@ -99,6 +101,8 @@ Status PoolOpBuilder::SetCommonPoolParams(const NodeAttrHelper& node_helper,
   ORT_RETURN_IF_NOT(strides.size() == 2, "QNN only support strides with shape[2].");
 
   pad_amount = node_helper.Get("pads", std::vector<uint32_t>{0, 0, 0, 0});
+  ORT_RETURN_IF_NOT(pad_amount.size() == 4, "QNN only support pads with shape[2, 2].");
+
   auto auto_pad = node_helper.Get("auto_pad", std::string("NOTSET"));
   ORT_RETURN_IF(auto_pad != "NOTSET" && auto_pad != "SAME_LOWER" && auto_pad != "SAME_UPPER",
                 "QNN Pool operators do not support 'auto_pad' value: ", auto_pad.c_str());
@@ -119,11 +123,50 @@ Status PoolOpBuilder::SetCommonPoolParams(const NodeAttrHelper& node_helper,
       pad_amount[0] = total_pads_0 - pad_amount[2];
       pad_amount[1] = total_pads_1 - pad_amount[3];
     }
+  } else {
+
+#if 0
+    // Helper function that makes padding adjustments for a specific axis/dim in manner consistent with
+    // native QNN converter tools. The padding after an axis is adjusted to ensure the output shape calculation
+    // is exact without relying on floor or ceil.
+    auto get_axis_padding = [](uint32_t input_dim, uint32_t output_dim, uint32_t stride,
+                               uint32_t filter_size, bool ceil, uint32_t& pad_before, uint32_t& pad_after) -> Status {
+      int64_t total_req_padding = (static_cast<int64_t>(output_dim) - 1) * stride +
+                                  (static_cast<int64_t>(filter_size) - input_dim);
+
+      if (total_req_padding < 0) {
+        return Status::OK();  // If negative, this is likely caused by stride > filter.
+                              // Return without modifying original padding values.
+      }
+
+      int64_t pad_sum = static_cast<int64_t>(pad_before) + pad_after;
+      int64_t pad_delta = ceil ? 1 : -1;
+      ORT_RETURN_IF_NOT((pad_sum == total_req_padding) || (pad_sum + pad_delta == total_req_padding),
+                        "Explicit pad values (", pad_before, ", ", pad_after,
+                        ") are not consistent with the expected total padding (", total_req_padding,
+                        ") required to calculate the pool operator's output shape.");
+      if (pad_sum + pad_delta == total_req_padding) {
+        // Ceil or floor are used when calculating output dimensions, which may result in the total padding being off by one.
+        // To account for that, we add the pad delta to pad_after.
+        int64_t tmp_pad_after = pad_delta + pad_after;
+        ORT_RETURN_IF(tmp_pad_after < 0, "QNN Pool padding cannot be made negative.");
+        pad_after = static_cast<uint32_t>(tmp_pad_after);
+      }
+
+      return Status::OK();
+    };
+
+    // Height padding.
+    ORT_RETURN_IF_ERROR(get_axis_padding(input_shape[1], output_shape[1], strides[0], filter_size[0], ceil_mode != 0,
+                                         pad_amount[0], pad_amount[2]));
+    // Width padding.
+    ORT_RETURN_IF_ERROR(get_axis_padding(input_shape[2], output_shape[2], strides[1], filter_size[1], ceil_mode != 0,
+                                         pad_amount[1], pad_amount[3]));
+#endif
   }
-  ORT_RETURN_IF_NOT(pad_amount.size() == 4, "QNN only support pads with shape[2, 2].");
+
   ReArranagePads(pad_amount);
 
-  ceil_mode = node_helper.Get("ceil_mode", ceil_mode);
   return Status::OK();
 }  // namespace qnn
 

@@ -288,15 +288,16 @@ if(onnxruntime_BUILD_APPLE_FRAMEWORK)
     set(STATIC_FRAMEWORK_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR})
   endif()
 
-  # setup working directory. remove first in case an old one exists
+  # Setup the various directories required. Remove any existing ones so we start with a clean directory.
   set(STATIC_LIB_DIR ${CMAKE_CURRENT_BINARY_DIR}/static_libraries)
+  set(STATIC_LIB_TEMP_DIR ${STATIC_LIB_DIR}/temp)
   file(REMOVE_RECURSE  ${STATIC_LIB_DIR})
   file(MAKE_DIRECTORY ${STATIC_LIB_DIR})
-
-  # setup temp directory for unpacking
-  set(STATIC_LIB_TEMP_DIR ${STATIC_LIB_DIR}/temp)
-  file(REMOVE_RECURSE  ${STATIC_LIB_TEMP_DIR})
   file(MAKE_DIRECTORY ${STATIC_LIB_TEMP_DIR})
+
+  set(STATIC_FRAMEWORK_DIR ${STATIC_FRAMEWORK_OUTPUT_DIR}/static_framework/onnxruntime.framework)
+  file(REMOVE_RECURSE  ${STATIC_FRAMEWORK_DIR})
+  file(MAKE_DIRECTORY ${STATIC_FRAMEWORK_DIR})
 
   # replicate XCode's Single Object Pre-Link
   # link the internal onnxruntime .o files with the external .a files into a single relocatable object
@@ -333,19 +334,15 @@ if(onnxruntime_BUILD_APPLE_FRAMEWORK)
                      COMMAND ld ARGS -r -o ${STATIC_LIB_DIR}/prelinked_objects.o */*.o ../*.a
                      WORKING_DIRECTORY ${STATIC_LIB_TEMP_DIR})
 
-  # Assemble the static framework
-  set(STATIC_FRAMEWORK_DIR ${STATIC_FRAMEWORK_OUTPUT_DIR}/static_framework/onnxruntime.framework)
-  file(REMOVE_RECURSE  ${STATIC_FRAMEWORK_DIR})
-  file(MAKE_DIRECTORY ${STATIC_FRAMEWORK_DIR})
-
-  add_custom_command(TARGET onnxruntime POST_BUILD
-                     COMMAND ${CMAKE_COMMAND} -E
-                       copy_if_different ${INFO_PLIST_PATH} ${STATIC_FRAMEWORK_DIR}/Info.plist)
-
   # create the static library
   add_custom_command(TARGET onnxruntime POST_BUILD
                      COMMAND libtool -static -o ${STATIC_FRAMEWORK_DIR}/onnxruntime prelinked_objects.o
                      WORKING_DIRECTORY ${STATIC_LIB_DIR})
+
+  # Assemble the other pieces of the static framework
+  add_custom_command(TARGET onnxruntime POST_BUILD
+                     COMMAND ${CMAKE_COMMAND} -E
+                       copy_if_different ${INFO_PLIST_PATH} ${STATIC_FRAMEWORK_DIR}/Info.plist)
 
   # add the framework header files
   set(STATIC_FRAMEWORK_HEADER_DIR ${STATIC_FRAMEWORK_DIR}/Headers)

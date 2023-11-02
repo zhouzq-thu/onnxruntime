@@ -284,38 +284,40 @@ endif()
 if(onnxruntime_BUILD_APPLE_FRAMEWORK)
   set(STATIC_LIB_DIR ${CMAKE_CURRENT_BINARY_DIR}/static_libraries)
   file(MAKE_DIRECTORY ${STATIC_LIB_DIR})
-  file(MAKE_DIRECTORY ${STATIC_LIB_DIR}/temp)
 
   # Remove the existing files in the STATIC_LIB_DIR folder
   file(GLOB _OLD_STATIC_LIBS ${STATIC_LIB_DIR}/*.a)
   file(REMOVE "${_OLD_STATIC_LIBS}")
 
-  # Go through all the static libraries, and create symbolic links
+  # make sure the temp working directory is clean
+  set(STATIC_LIB_TEMP_DIR ${STATIC_LIB_DIR}/temp)
+  file(REMOVE_RECURSE  ${STATIC_LIB_TEMP_DIR})
+  file(MAKE_DIRECTORY ${STATIC_LIB_TEMP_DIR})
+
+  set(_FILELIST_OF_OBJECT_FILES ${STATIC_LIB_DIR}/object_files.txt)
+  # Go through all the static libraries, and create symbolic links UPDATE!
   foreach(_LIB ${onnxruntime_INTERNAL_LIBRARIES} ${onnxruntime_EXTERNAL_LIBRARIES})
     GET_TARGET_PROPERTY(_LIB_TYPE ${_LIB} TYPE)
     if(_LIB_TYPE STREQUAL "STATIC_LIBRARY")
-      set(_LIB_TARGET_FILE_NAME $<TARGET_LINKER_FILE_NAME:${_LIB}>)
-      add_custom_command(TARGET onnxruntime POST_BUILD
-                         COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE:${_LIB}>
-                                                  ${STATIC_LIB_DIR}/temp/${_LIB_TARGET_FILE_NAME})
+      set(_LIB_TARGET_FILE_NAME "$<TARGET_LINKER_FILE_NAME:${_LIB}>")
+      set(_LIB_TARGET_BASE_NAME "$<TARGET_LINKER_FILE_BASE_NAME:${_LIB}>")
 
-      # extract, pre-link with `ld -r` to hide symbols, and repack into static library
+      # extract .o files to separate directory for each library
+      set(CUR_STATIC_LIB_OBJ_DIR ${STATIC_LIB_TEMP_DIR}/${_LIB_TARGET_BASE_NAME})
       add_custom_command(TARGET onnxruntime POST_BUILD
-                         COMMAND ar ARGS -x $<TARGET_LINKER_FILE_NAME:${_LIB}>
-                         WORKING_DIRECTORY ${STATIC_LIB_DIR}/temp)
+                         COMMAND ${CMAKE_COMMAND} -E make_directory ${CUR_STATIC_LIB_OBJ_DIR})
 
-      # create the relocatable object file.
-      # technically it's a relocatable object file but we use the '.a' _LIB_TARGET_FILE_NAME for simplicity
       add_custom_command(TARGET onnxruntime POST_BUILD
-                         COMMAND ld ARGS -r -o ${STATIC_LIB_DIR}/${_LIB_TARGET_FILE_NAME} *.o
-                         WORKING_DIRECTORY ${STATIC_LIB_DIR}/temp)
-
-      # cleanup
-      add_custom_command(TARGET onnxruntime POST_BUILD
-                         COMMAND rm ARGS *
-                         WORKING_DIRECTORY ${STATIC_LIB_DIR}/temp)
+                         COMMAND ar ARGS -x $<TARGET_FILE:${_LIB}>
+                         WORKING_DIRECTORY ${CUR_STATIC_LIB_OBJ_DIR})
     endif()
   endforeach()
+
+  # pack the .o files into a single relocatable object (replicate XCode's Single Object Pre-Link)
+  # to enforce symbol visibility
+  add_custom_command(TARGET onnxruntime POST_BUILD
+                    COMMAND ld ARGS -r -o ${STATIC_LIB_DIR}/prelinked_objects.o */*.o
+                    WORKING_DIRECTORY ${STATIC_LIB_TEMP_DIR})
 
   if(${CMAKE_SYSTEM_NAME} STREQUAL "iOS")
     set(STATIC_FRAMEWORK_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_BUILD_TYPE}-${CMAKE_OSX_SYSROOT})
@@ -340,6 +342,26 @@ if(onnxruntime_BUILD_APPLE_FRAMEWORK)
   endforeach()
   add_custom_command(TARGET onnxruntime POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different ${INFO_PLIST_PATH} ${STATIC_FRAMEWORK_DIR}/Info.plist)
 
-  # link the static library
-  add_custom_command(TARGET onnxruntime POST_BUILD COMMAND libtool -static -o ${STATIC_FRAMEWORK_DIR}/onnxruntime *.a WORKING_DIRECTORY ${STATIC_LIB_DIR})
+  # link the static library. a few steps are required to enforce symbol visibility.
+  # first assemble all the .a files into a single archive
+  # add_custom_command(TARGET onnxruntime POST_BUILD
+  #                    COMMAND libtool -static -o ${STATIC_LIB_TEMP_DIR}/all_static_libs.a *.a
+  #                    WORKING_DIRECTORY ${STATIC_LIB_DIR})
+  # extract all the .o files so we can pre-link to hide internal symbols.
+  # this requires all the .o files to be pre-linked at once which is why we needed step one to create a merged .a file
+  # add_custom_command(TARGET onnxruntime POST_BUILD
+  #                    COMMAND ar ARGS -x all_static_libs.a
+  #                    WORKING_DIRECTORY ${STATIC_LIB_TEMP_DIR})
+  # create the relocatable object file
+  # add_custom_command(TARGET onnxruntime POST_BUILD
+  #                    COMMAND ld ARGS -r -o relocatable_onnxruntime.o *.o
+  #                    WORKING_DIRECTORY ${STATIC_LIB_TEMP_DIR})
+  # and repack into the static archive
+  add_custom_command(TARGET onnxruntime POST_BUILD
+                     COMMAND libtool -static -o ${STATIC_FRAMEWORK_DIR}/onnxruntime prelinked_objects.o
+                     WORKING_DIRECTORY ${STATIC_LIB_DIR})
+  # cleanup
+  # add_custom_command(TARGET onnxruntime POST_BUILD
+  #                    COMMAND rm ARGS -rf ${STATIC_LIB_TEMP_DIR}
+  #                    WORKING_DIRECTORY ${STATIC_LIB_DIR})
 endif()

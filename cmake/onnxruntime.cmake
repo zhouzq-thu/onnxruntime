@@ -282,19 +282,26 @@ endif()
 
 # Assemble the Apple static framework (iOS and macOS)
 if(onnxruntime_BUILD_APPLE_FRAMEWORK)
+  if(${CMAKE_SYSTEM_NAME} STREQUAL "iOS")
+    set(STATIC_FRAMEWORK_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_BUILD_TYPE}-${CMAKE_OSX_SYSROOT})
+  else() # macOS
+    set(STATIC_FRAMEWORK_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR})
+  endif()
+
+  # setup working directory. remove first in case an old one exists
   set(STATIC_LIB_DIR ${CMAKE_CURRENT_BINARY_DIR}/static_libraries)
+  file(REMOVE_RECURSE  ${STATIC_LIB_DIR})
   file(MAKE_DIRECTORY ${STATIC_LIB_DIR})
 
-  # Remove the existing files in the STATIC_LIB_DIR folder
-  file(GLOB _OLD_STATIC_LIBS ${STATIC_LIB_DIR}/*.a)
-  file(REMOVE "${_OLD_STATIC_LIBS}")
-
-  # make sure the temp working directory is clean
+  # setup temp directory for unpacking
   set(STATIC_LIB_TEMP_DIR ${STATIC_LIB_DIR}/temp)
   file(REMOVE_RECURSE  ${STATIC_LIB_TEMP_DIR})
   file(MAKE_DIRECTORY ${STATIC_LIB_TEMP_DIR})
 
-  set(_FILELIST_OF_OBJECT_FILES ${STATIC_LIB_DIR}/object_files.txt)
+  # replicate XCode's Single Object Pre-Link
+  # link the internal onnxruntime .o files with the external .a files into a single relocatable object
+  # to enforce symbol visibility. doing it this way limits the symbols included from the .a files to symbols used
+  # by the ORT .o files.
 
   # If it's an onnxruntime library, extract .o files to a separate directory for each library to avoid any clashes
   # with filenames (e.g. utils.o)
@@ -321,42 +328,34 @@ if(onnxruntime_BUILD_APPLE_FRAMEWORK)
     endif()
   endforeach()
 
-  # replicate XCode's Single Object Pre-Link
-  # pack the internal .o files and external .a files into a single relocatable object to enforce symbol visibility.
-  # doing it this way limits the symbols included from the .a files to things used by the ORT .o files.
+  # do the pre-link with `ld -r` to create a single relocatable object with correct symbol visibility
   add_custom_command(TARGET onnxruntime POST_BUILD
                      COMMAND ld ARGS -r -o ${STATIC_LIB_DIR}/prelinked_objects.o */*.o ../*.a
                      WORKING_DIRECTORY ${STATIC_LIB_TEMP_DIR})
 
-  if(${CMAKE_SYSTEM_NAME} STREQUAL "iOS")
-    set(STATIC_FRAMEWORK_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_BUILD_TYPE}-${CMAKE_OSX_SYSROOT})
-  else() # macOS
-    set(STATIC_FRAMEWORK_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR})
-  endif()
-
   # Assemble the static framework
   set(STATIC_FRAMEWORK_DIR ${STATIC_FRAMEWORK_OUTPUT_DIR}/static_framework/onnxruntime.framework)
-  set(STATIC_FRAMEWORK_HEADER_DIR ${STATIC_FRAMEWORK_DIR}/Headers)
+  file(REMOVE_RECURSE  ${STATIC_FRAMEWORK_DIR})
   file(MAKE_DIRECTORY ${STATIC_FRAMEWORK_DIR})
-  # Remove all files under STATIC_FRAMEWORK_DIR (if any)
-  file(GLOB_RECURSE _OLD_STATIC_FRAMEWORK ${STATIC_FRAMEWORK_DIR}/*.*)
-  file(REMOVE "${_OLD_STATIC_FRAMEWORK}")
 
-  file(MAKE_DIRECTORY ${STATIC_FRAMEWORK_HEADER_DIR})
+  add_custom_command(TARGET onnxruntime POST_BUILD
+                     COMMAND ${CMAKE_COMMAND} -E
+                       copy_if_different ${INFO_PLIST_PATH} ${STATIC_FRAMEWORK_DIR}/Info.plist)
 
-  # copy the header files one by one, and the Info.plist
-  foreach(h_ ${ONNXRUNTIME_PUBLIC_HEADERS})
-    get_filename_component(HEADER_NAME_ ${h_} NAME)
-    add_custom_command(TARGET onnxruntime POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different ${h_} ${STATIC_FRAMEWORK_HEADER_DIR}/${HEADER_NAME_})
-  endforeach()
-  add_custom_command(TARGET onnxruntime POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different ${INFO_PLIST_PATH} ${STATIC_FRAMEWORK_DIR}/Info.plist)
-
-  # ORIG - TEMPORARY for testing/comparison
-  # link the static library
-  add_custom_command(TARGET onnxruntime POST_BUILD COMMAND libtool -static -o ${STATIC_FRAMEWORK_DIR}/onnxruntime.main *.a WORKING_DIRECTORY ${STATIC_LIB_DIR})
-
-  # create static library for framework
+  # create the static library
   add_custom_command(TARGET onnxruntime POST_BUILD
                      COMMAND libtool -static -o ${STATIC_FRAMEWORK_DIR}/onnxruntime prelinked_objects.o
                      WORKING_DIRECTORY ${STATIC_LIB_DIR})
+
+  # add the framework header files
+  set(STATIC_FRAMEWORK_HEADER_DIR ${STATIC_FRAMEWORK_DIR}/Headers)
+  file(MAKE_DIRECTORY ${STATIC_FRAMEWORK_HEADER_DIR})
+
+  foreach(h_ ${ONNXRUNTIME_PUBLIC_HEADERS})
+    get_filename_component(HEADER_NAME_ ${h_} NAME)
+    add_custom_command(TARGET onnxruntime POST_BUILD
+                       COMMAND ${CMAKE_COMMAND} -E
+                         copy_if_different ${h_} ${STATIC_FRAMEWORK_HEADER_DIR}/${HEADER_NAME_})
+  endforeach()
+
 endif()

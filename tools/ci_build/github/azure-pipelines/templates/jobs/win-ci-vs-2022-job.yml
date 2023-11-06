@@ -175,6 +175,29 @@ jobs:
       msbuildArguments: '-t:restore -p:OrtPackageId=$(OrtPackageId)'
       workingDirectory: '$(Build.SourcesDirectory)\csharp'
 
+  - ${{ if eq(parameters.EnablePython, true) }}:
+      - powershell: |
+         python3 -m pip uninstall -y ort-nightly-gpu ort-nightly onnxruntime onnxruntime-gpu onnxruntime-training onnxruntime-directml ort-nightly-directml -qq
+         Get-ChildItem -Path dist/*.whl | foreach {pip --disable-pip-version-check install --upgrade $_.fullname}
+
+        workingDirectory: '$(Build.BinariesDirectory)\${{ parameters.BuildConfig }}\${{ parameters.BuildConfig }}'
+        displayName: 'Install onnxruntime wheel'
+
+  - ${{ if eq(parameters.RunOnnxRuntimeTests, true) }}:
+      - powershell: |
+         python $(Build.SourcesDirectory)\tools\ci_build\build.py --config ${{ parameters.BuildConfig }} --build_dir $(Build.BinariesDirectory) --skip_submodule_sync --build_shared_lib --test --cmake_generator "Visual Studio 17 2022"  --build_shared_lib --enable_onnx_tests ${{ parameters.additionalBuildFlags }}
+
+        workingDirectory: '$(Build.BinariesDirectory)\${{ parameters.BuildConfig }}\${{ parameters.BuildConfig }}'
+        displayName: 'Run tests'
+
+      - task: PublishTestResults@2
+        displayName: 'Publish unit test results'
+        inputs:
+          testResultsFiles: '**/*.results.xml'
+          searchFolder: '$(Build.BinariesDirectory)/${{ parameters.BuildConfig }}'
+          testRunTitle: 'Unit Test Run'
+        condition: succeededOrFailed()
+
   - task: MSBuild@1
     displayName: 'Build C#'
     inputs:
@@ -199,29 +222,6 @@ jobs:
           configuration: '${{ parameters.BuildConfig }}'
           arguments: '--configuration ${{ parameters.BuildConfig }} -p:Platform="Any CPU" -p:OnnxRuntimeBuildDirectory="$(Build.BinariesDirectory)" -p:OrtPackageId=$(OrtPackageId) -p:IncludeMobileTargets=false --blame'
           workingDirectory: '$(Build.SourcesDirectory)\csharp'
-
-  - ${{ if eq(parameters.EnablePython, true) }}:
-      - powershell: |
-         python3 -m pip uninstall -y ort-nightly-gpu ort-nightly onnxruntime onnxruntime-gpu onnxruntime-training onnxruntime-directml ort-nightly-directml -qq
-         Get-ChildItem -Path dist/*.whl | foreach {pip --disable-pip-version-check install --upgrade $_.fullname}
-
-        workingDirectory: '$(Build.BinariesDirectory)\${{ parameters.BuildConfig }}\${{ parameters.BuildConfig }}'
-        displayName: 'Install onnxruntime wheel'
-
-  - ${{ if eq(parameters.RunOnnxRuntimeTests, true) }}:
-      - powershell: |
-         python $(Build.SourcesDirectory)\tools\ci_build\build.py --config ${{ parameters.BuildConfig }} --build_dir $(Build.BinariesDirectory) --skip_submodule_sync --build_shared_lib --test --cmake_generator "Visual Studio 17 2022"  --build_shared_lib --enable_onnx_tests ${{ parameters.additionalBuildFlags }}
-
-        workingDirectory: '$(Build.BinariesDirectory)\${{ parameters.BuildConfig }}\${{ parameters.BuildConfig }}'
-        displayName: 'Run tests'
-
-      - task: PublishTestResults@2
-        displayName: 'Publish unit test results'
-        inputs:
-          testResultsFiles: '**/*.results.xml'
-          searchFolder: '$(Build.BinariesDirectory)/${{ parameters.BuildConfig }}'
-          testRunTitle: 'Unit Test Run'
-        condition: succeededOrFailed()
 
   - ${{ if eq(parameters.GenerateDocumentation, true) }}:
     - task: PythonScript@0

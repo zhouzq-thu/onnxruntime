@@ -250,9 +250,11 @@ Status QnnModel::ComposeGraph(const GraphViewer& graph_viewer,
     }
 
     // Optimize away DQ -> Q sequences.
+#if 1
     if (handle_dq_q_sequence(node_unit)) {
       continue;
     }
+#endif
 
     LOGS(logger_, WARNING) << " node name: [" << node->Name()
                            << "] node optype: [" << op_type

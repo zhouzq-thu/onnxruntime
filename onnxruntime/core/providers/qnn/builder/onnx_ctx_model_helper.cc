@@ -111,7 +111,7 @@ Status QnnCacheModelHandler::GetEpContextFromGraph(const onnxruntime::GraphViewe
                                                                qnn_model);
   }
 
-  return Status::OK();
+  //return Status::OK();
 }
 
 Status QnnCacheModelHandler::GetMetadataFromEpContextModel(const std::string& ctx_onnx_model_path,

@@ -196,12 +196,48 @@ Status SliceOpBuilder::ProcessAttributesAndOutputs(QnnModelWrapper& qnn_model_wr
                                       true);
   std::string param_tensor_name(ranges_paramwrapper.GetParamTensorName());
   qnn_model_wrapper.AddParamWrapper(std::move(ranges_paramwrapper));
+#if 0
   ORT_RETURN_IF_ERROR(ProcessOutputs(qnn_model_wrapper,
                                      node_unit,
                                      std::move(input_names),
                                      {param_tensor_name},
                                      logger,
                                      do_op_validation, GetQnnOpType(node_unit.OpType())));
+#else
+  ORT_UNUSED_PARAMETER(logger);
+  const QnnTensorWrapper& input_tensor_wrapper = qnn_model_wrapper.GetQnnTensorWrapper(input_names[0]);
+  Qnn_QuantizeParams_t quantize_param = GetQnnTensorQParams(input_tensor_wrapper.GetQnnTensor());
+  Qnn_DataType_t qnn_data_type = input_tensor_wrapper.GetTensorDataType();
+  const auto& outputs = node_unit.Outputs();
+  std::vector<std::string> output_names;
+
+  const auto output_count = GetOutputCountQnnRequired(node_unit);
+  for (size_t output_i = 0; output_i < output_count; ++output_i) {
+    const auto& output_name = outputs[output_i].node_arg.Name();
+
+    std::vector<uint32_t> output_shape;
+    ORT_RETURN_IF_NOT(qnn_model_wrapper.GetOnnxShape(outputs[output_i].node_arg, output_shape),
+                      "Cannot get shape");
+    bool is_graph_output = qnn_model_wrapper.IsGraphOutput(output_name);
+    output_names.push_back(output_name);
+    Qnn_TensorType_t tensor_type = is_graph_output ? QNN_TENSOR_TYPE_APP_READ : QNN_TENSOR_TYPE_NATIVE;
+    QnnTensorWrapper output_tensorwrapper(output_name,
+                                          tensor_type,
+                                          qnn_data_type,
+                                          quantize_param,
+                                          std::move(output_shape));
+    ORT_RETURN_IF_NOT(qnn_model_wrapper.AddTensorWrapper(std::move(output_tensorwrapper)), "Failed to add tensor.");
+  }
+
+  ORT_RETURN_IF_NOT(qnn_model_wrapper.CreateQnnNode(GetNodeName(node_unit),
+                                                    QNN_OP_PACKAGE_NAME_QTI_AISW,
+                                                    GetQnnOpType(node_unit.OpType()),
+                                                    std::move(input_names),
+                                                    std::move(output_names),
+                                                    {param_tensor_name},
+                                                    do_op_validation),
+                    "Failed to add node.");
+#endif
   return Status::OK();
 }
 

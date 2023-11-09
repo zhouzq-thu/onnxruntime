@@ -71,13 +71,10 @@ jobs:
     inputs:
       versionSpec: 6.4.x
 
-  - powershell: |
-     gci -Recurse "C:`\Program Files`\Git`\" -Filter patch.exe -ErrorAction SilentlyContinue
-    displayName: 'Check for patch.exe in Git install'
-
-  - powershell: |
-     gci -Recurse "C:`\" -Filter patch.exe -ErrorAction SilentlyContinue
-    displayName: 'Check for patch.exe on C:\\'
+  - script: |
+     $(Build.SourcesDirectory)\cmake\external\git.Win32.2.41.03.patch\patch.exe --version
+     $(Build.SourcesDirectory)\cmake\external\git.Win32.2.41.03.patch\patch.exe --help
+    displayName: 'Run patch --help'
 
   - task: PythonScript@0
     displayName: 'Build'
